@@ -10,34 +10,43 @@
 
 <!-- ===================== SCREENS ===================== -->
 
-<!-- Home / Join Screen -->
+<!-- Lobby / Competition List Screen -->
 <div id="screen-home" class="screen active">
   <div class="hero">
     <div class="hero-emoji">⛳</div>
     <h1>Golf Scorer</h1>
-    <p class="subtitle">Holiday Golf Competition</p>
+    <p class="subtitle">Multi-Competition Manager</p>
   </div>
   <div class="card">
-    <div id="home-loading" class="loading-msg">Loading competition...</div>
-    <div id="home-no-comp" class="hidden">
-      <p class="info-text">No competition set up yet.</p>
-      <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">🏌️ Set Up Competition</button>
+    <button class="btn btn-primary btn-lg" onclick="createNewCompetition()">🏌️ Create New Competition</button>
+    <div class="divider"></div>
+    <h3>Competitions</h3>
+    <div id="lobby-loading" class="loading-msg">Loading competitions...</div>
+    <div id="lobby-list" class="comp-list">
+      <!-- Dynamically added -->
     </div>
-    <div id="home-comp-found" class="hidden">
-      <h2 id="home-comp-name" class="comp-name"></h2>
-      <p id="home-comp-info" class="info-text"></p>
-      <div id="home-player-list" class="player-grid"></div>
-      <div class="divider"></div>
-      <button class="btn btn-outline btn-sm" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
-      <button class="btn btn-outline btn-sm" onclick="showAdminLogin()">🔧 Admin</button>
-    </div>
+  </div>
+</div>
+
+<!-- Competition Dashboard (Old Home) -->
+<div id="screen-comp-menu" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-home')">🏠 Lobby</button>
+    <h2 id="menu-comp-name">Competition</h2>
+  </div>
+  <div class="card">
+    <div id="menu-comp-info" class="info-text"></div>
+    <div id="menu-player-list" class="player-grid"></div>
+    <div class="divider"></div>
+    <button class="btn btn-outline btn-sm" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+    <button class="btn btn-outline btn-sm" onclick="showAdminLogin()">🔧 Admin</button>
   </div>
 </div>
 
 <!-- Admin Login -->
 <div id="screen-admin-login" class="screen hidden">
   <div class="screen-header">
-    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <h2>Admin Access</h2>
   </div>
   <div class="card">
@@ -51,8 +60,8 @@
 <!-- Admin Setup Screen -->
 <div id="screen-admin-setup" class="screen hidden">
   <div class="screen-header">
-    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
-    <h2>⚙️ Competition Setup</h2>
+    <button class="btn-back" id="setup-back-btn" onclick="showScreen('screen-home')">← Back</button>
+    <h2 id="setup-title">⚙️ Competition Setup</h2>
   </div>
   <div class="card">
     <label class="label">Competition Name</label>
@@ -99,7 +108,7 @@
 <!-- Player Score Entry -->
 <div id="screen-score" class="screen hidden">
   <div class="screen-header">
-    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <h2 id="score-player-name"></h2>
   </div>
   <div class="round-tabs" id="score-round-tabs"></div>
@@ -128,7 +137,7 @@
 <!-- Leaderboard -->
 <div id="screen-leaderboard" class="screen hidden">
   <div class="screen-header">
-    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <h2>📊 Leaderboard</h2>
   </div>
   <div class="round-tabs" id="lb-round-tabs"></div>
@@ -146,7 +155,7 @@
 <!-- Admin Panel -->
 <div id="screen-admin-panel" class="screen hidden">
   <div class="screen-header">
-    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <h2>🔧 Admin Panel</h2>
   </div>
   <div class="card">

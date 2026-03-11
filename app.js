@@ -19,6 +19,7 @@ const DEFAULT_PARS = [4,4,3,4,5,3,4,4,4,4,3,5,4,3,4,5,3,4];
 
 // --- App State ---
 const state = {
+  activeCompId: localStorage.getItem('activeCompId') || null,
   comp: null,
   currentPlayer: null,
   lbRound: 'overall',
@@ -26,6 +27,8 @@ const state = {
   editingCourse: null,
   isAdmin: false,
   holeModalCtx: null,
+  allComps: {},
+  isCopying: false
 };
 
 // Temp storage for course holes being set up (before saving to Firebase)
@@ -49,40 +52,151 @@ function showScreen(id) {
   window.scrollTo(0, 0);
 
   if (id === 'screen-home')         initHome();
+  if (id === 'screen-comp-menu')    initCompMenu();
   if (id === 'screen-admin-setup')  initAdminSetup();
   if (id === 'screen-leaderboard')  renderLeaderboard();
 }
 window.showScreen = showScreen;
 
 // =====================================================
-// HOME SCREEN
+// LOBBY / HOME SCREEN
 // =====================================================
 function initHome() {
-  $('home-loading').classList.remove('hidden');
-  $('home-no-comp').classList.add('hidden');
-  $('home-comp-found').classList.add('hidden');
+  $('lobby-loading').classList.remove('hidden');
+  const list = $('lobby-list');
+  list.innerHTML = '';
 
-  // One-time load; live updates are handled by score screens
-  onValue(ref(db, 'competition'), snap => {
-    state.comp = snap.val();
-    $('home-loading').classList.add('hidden');
-    if (!state.comp || !state.comp.name) {
-      $('home-no-comp').classList.remove('hidden');
-    } else {
-      renderHome();
-    }
+  // Listen to all competitions
+  onValue(ref(db, 'competitions'), snap => {
+    state.allComps = snap.val() || {};
+    
+    // Also check for legacy competition
+    onValue(ref(db, 'competition'), legacySnap => {
+      const legacyComp = legacySnap.val();
+      renderLobby(legacyComp);
+      $('lobby-loading').classList.add('hidden');
+    }, { onlyOnce: true });
   }, { onlyOnce: true });
 }
 
-function renderHome() {
+function renderLobby(legacyComp) {
+  const list = $('lobby-list');
+  list.innerHTML = '';
+
+  const comps = Object.entries(state.allComps).map(([id, data]) => ({
+    id,
+    ...data.meta
+  })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (legacyComp && legacyComp.name) {
+    comps.push({
+      id: 'legacy',
+      name: legacyComp.name + ' (legacy)',
+      players: legacyComp.players,
+      rounds: legacyComp.rounds,
+      isLegacy: true
+    });
+  }
+
+  if (comps.length === 0) {
+    list.innerHTML = '<p class="info-text">No competitions found. Create one to get started!</p>';
+    return;
+  }
+
+  comps.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'comp-card';
+    const playerCount = c.players ? Object.keys(c.players).length : 0;
+    const roundCount = c.rounds ? c.rounds.length : 0;
+    const dateStr = c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '';
+
+    card.innerHTML = `
+      <div class="comp-card-main">
+        <div class="comp-card-name">${escHtml(c.name)}</div>
+        <div class="comp-card-meta">${dateStr ? dateStr + ' · ' : ''}${playerCount} players · ${roundCount} rounds</div>
+      </div>
+      <div class="comp-card-actions">
+        <button class="btn btn-primary btn-sm" onclick="openCompetition('${c.id}')">Open</button>
+        ${!c.isLegacy ? `<button class="btn btn-outline btn-sm" onclick="copyCompetition('${c.id}')">Copy</button>` : ''}
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function createNewCompetition() {
+  state.activeCompId = null;
+  state.comp = null;
+  state.isAdmin = true; // Allow setup
+  state.isCopying = false;
+  showScreen('screen-admin-setup');
+}
+window.createNewCompetition = createNewCompetition;
+
+function openCompetition(compId) {
+  state.activeCompId = compId;
+  localStorage.setItem('activeCompId', compId);
+  state.isAdmin = false;
+  showScreen('screen-comp-menu');
+}
+window.openCompetition = openCompetition;
+
+function copyCompetition(compId) {
+  const sourceComp = state.allComps[compId];
+  if (!sourceComp) return;
+
+  state.activeCompId = null;
+  state.isCopying = true;
+  state.isAdmin = true;
+  
+  // Pre-fill state.comp for setup form
+  const meta = sourceComp.meta;
+  state.comp = {
+    ...meta,
+    name: incrementName(meta.name),
+    adminPin: '' // Clear pin
+  };
+  
+  showScreen('screen-admin-setup');
+}
+window.copyCompetition = copyCompetition;
+
+function incrementName(name) {
+  const yearMatch = name.match(/(\d{4})/);
+  if (yearMatch) {
+    const year = parseInt(yearMatch[1]);
+    return name.replace(yearMatch[1], year + 1);
+  }
+  return name + ' (Copy)';
+}
+
+// =====================================================
+// COMPETITION MENU (Old renderHome)
+// =====================================================
+function initCompMenu() {
+  if (!state.activeCompId) { showScreen('screen-home'); return; }
+
+  const path = state.activeCompId === 'legacy' ? 'competition' : `competitions/${state.activeCompId}/meta`;
+  
+  onValue(ref(db, path), snap => {
+    state.comp = snap.val();
+    if (!state.comp) {
+      alert('Competition not found.');
+      showScreen('screen-home');
+      return;
+    }
+    renderCompMenu();
+  }, { onlyOnce: true });
+}
+
+function renderCompMenu() {
   const c = state.comp;
-  $('home-comp-found').classList.remove('hidden');
-  $('home-comp-name').textContent = c.name;
+  $('menu-comp-name').textContent = c.name;
 
   const roundNames = c.rounds ? c.rounds.map((r,i) => r.name || `Round ${i+1}`).join(', ') : '';
-  $('home-comp-info').textContent = roundNames ? `Courses: ${roundNames}` : '';
+  $('menu-comp-info').textContent = roundNames ? `Courses: ${roundNames}` : '';
 
-  const grid = $('home-player-list');
+  const grid = $('menu-player-list');
   grid.innerHTML = '';
   if (c.players) {
     Object.values(c.players).forEach(p => {
@@ -116,7 +230,7 @@ window.showAdminLogin = showAdminLogin;
 function checkAdminPin() {
   const pin = $('admin-pin-input').value;
   if (!state.comp || !state.comp.adminPin) {
-    // No comp yet — go straight to setup
+    // Should not happen in new flow but as safety:
     state.isAdmin = true;
     showScreen('screen-admin-setup');
     return;
@@ -131,9 +245,14 @@ function checkAdminPin() {
 window.checkAdminPin = checkAdminPin;
 
 function resetCompetition() {
-  if (!confirm('⚠️ This will delete ALL scores and competition data. Are you sure?')) return;
-  remove(ref(db, 'competition'));
-  remove(ref(db, 'scores'));
+  if (!confirm('⚠️ This will delete ALL scores and competition data for this competition. Are you sure?')) return;
+  const path = state.activeCompId === 'legacy' ? '' : `competitions/${state.activeCompId}`;
+  if (path === '') {
+     remove(ref(db, 'competition'));
+     remove(ref(db, 'scores'));
+  } else {
+     remove(ref(db, path));
+  }
   state.comp = null;
   state.isAdmin = false;
   showScreen('screen-home');
@@ -145,6 +264,11 @@ window.resetCompetition = resetCompetition;
 // =====================================================
 function initAdminSetup() {
   const c = state.comp;
+  const isEdit = !!state.activeCompId && !state.isCopying;
+  
+  $('setup-title').textContent = isEdit ? '✏️ Edit Competition' : (state.isCopying ? '👯 Copy Competition' : '⚙️ New Competition');
+  $('setup-back-btn').onclick = () => showScreen(isEdit ? 'screen-admin-panel' : 'screen-home');
+
   $('setup-comp-name').value = c ? (c.name || '') : '';
   $('setup-admin-pin').value  = c ? (c.adminPin || '') : '';
 
@@ -288,11 +412,30 @@ function saveSetup() {
     rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
   }
 
-  const comp = { name, adminPin: pin, players, rounds };
-  set(ref(db, 'competition'), comp)
+  const isLegacy = state.activeCompId === 'legacy';
+  const isNew = !state.activeCompId || state.isCopying;
+  
+  const compMeta = { name, adminPin: pin, players, rounds, updatedAt: Date.now() };
+  if (isNew) {
+    compMeta.createdAt = Date.now();
+  } else if (state.comp && state.comp.createdAt) {
+    compMeta.createdAt = state.comp.createdAt;
+  }
+
+  let compId = state.activeCompId;
+  if (isNew) {
+    compId = 'comp_' + Date.now();
+  }
+
+  const path = isLegacy ? 'competition' : `competitions/${compId}/meta`;
+  
+  set(ref(db, path), compMeta)
     .then(() => {
-      state.comp = comp;
-      showScreen('screen-home');
+      state.comp = compMeta;
+      state.activeCompId = compId;
+      state.isCopying = false;
+      localStorage.setItem('activeCompId', compId);
+      showScreen('screen-comp-menu');
     })
     .catch(err => showSetupError('Save failed: ' + err.message));
 }
@@ -307,6 +450,10 @@ function showSetupError(msg) {
 // =====================================================
 // SCORE ENTRY
 // =====================================================
+function getScorePath() {
+  return state.activeCompId === 'legacy' ? 'scores' : `competitions/${state.activeCompId}/scores`;
+}
+
 function renderScoreScreen() {
   const player = state.currentPlayer;
   const comp   = state.comp;
@@ -337,7 +484,7 @@ function renderScoreScreen() {
   }
 
   // Load scores (live)
-  onValue(ref(db, 'scores'), snap => {
+  onValue(ref(db, getScorePath()), snap => {
     const allScores = snap.val() || {};
     const myScores  = (allScores[state.scoreRound] || {})[player.id] || {};
     const round     = comp.rounds[state.scoreRound];

@@ -7,6 +7,18 @@
     "scores": {
       ".read": true,
       ".write": true
+    },
+    "competitions": {
+      "$compId": {
+        "meta": {
+          ".read": true,
+          ".write": true
+        },
+        "scores": {
+          ".read": true,
+          ".write": true
+        }
+      }
     }
   }
 }
