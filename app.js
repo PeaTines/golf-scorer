@@ -10,6 +10,10 @@ import { FIREBASE_CONFIG } from "./firebase-config.js";
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
 const db = getDatabase(firebaseApp);
 
+// --- Golf Course API ---
+const GOLF_API_KEY  = 'DEIJXBJWWU3ER7XYAEYSE72MCQ';
+const GOLF_API_BASE = 'https://api.golfcourseapi.com/v1';
+
 // --- Default hole pars (18 holes) ---
 const DEFAULT_PARS = [4,4,3,4,5,3,4,4,4,4,3,5,4,3,4,5,3,4];
 
@@ -163,6 +167,14 @@ function initAdminSetup() {
     div.className = 'round-setup-block';
     div.innerHTML = `
       <h4>Round ${i + 1}</h4>
+      <label class="label">Find Course <span class="label-hint">(optional)</span></label>
+      <div class="course-search-row">
+        <input type="text" class="input course-search-input" id="course-search-${i}" placeholder="e.g. Costa del Sol Golf" onkeydown="if(event.key==='Enter')searchCourse(${i})">
+        <button class="btn btn-outline btn-sm course-search-btn" onclick="searchCourse(${i})">🔍 Search</button>
+      </div>
+      <div id="course-results-${i}" class="course-results hidden"></div>
+      <div id="tee-selector-${i}" class="tee-selector hidden"></div>
+      <p class="course-search-hint">Course not found? Enter details manually.</p>
       <label class="label">Course Name</label>
       <input type="text" class="input" id="round-name-${i}" placeholder="e.g. Costa del Sol Golf" value="${escHtml(round ? round.name || '' : ['Amarilla Golf', 'Golf del Sur', 'Abama Golf'][i] || '')}">
       <div class="course-ratings-row">
@@ -658,6 +670,125 @@ function renderSkinsSummary(comp, roundSkins, allScores) {
     });
     el.appendChild(grid);
   });
+}
+
+// =====================================================
+// GOLF COURSE API
+// =====================================================
+
+async function searchCourse(roundIndex) {
+  const query = $(`course-search-${roundIndex}`).value.trim();
+  if (!query) return;
+
+  const resultsEl = $(`course-results-${roundIndex}`);
+  const teeEl     = $(`tee-selector-${roundIndex}`);
+  teeEl.classList.add('hidden');
+  resultsEl.innerHTML = '<p class="course-search-status">Searching…</p>';
+  resultsEl.classList.remove('hidden');
+
+  try {
+    const res = await fetch(`${GOLF_API_BASE}/search?search_query=${encodeURIComponent(query)}`, {
+      headers: { 'Authorization': `Key ${GOLF_API_KEY}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const courses = data.courses || [];
+
+    if (courses.length === 0) {
+      resultsEl.innerHTML = '<p class="course-search-status">No courses found — try a different name.</p>';
+      return;
+    }
+
+    resultsEl.innerHTML = '';
+    courses.forEach(course => {
+      const item = document.createElement('div');
+      item.className = 'course-result-item';
+      const location = course.location ? (course.location.city ? `${course.location.city}, ${course.location.country}` : course.location.country) : '';
+      item.innerHTML = `
+        <span class="course-result-name">${escHtml(course.club_name)}</span>
+        <span class="course-result-sub">${escHtml(course.course_name || '')}${location ? ' · ' + escHtml(location) : ''}</span>
+      `;
+      item.onclick = () => loadCourseDetails(course.id, roundIndex);
+      resultsEl.appendChild(item);
+    });
+  } catch (err) {
+    resultsEl.innerHTML = `<p class="course-search-status course-search-error">Search failed: ${escHtml(err.message)}</p>`;
+  }
+}
+window.searchCourse = searchCourse;
+
+async function loadCourseDetails(courseId, roundIndex) {
+  const resultsEl = $(`course-results-${roundIndex}`);
+  const teeEl     = $(`tee-selector-${roundIndex}`);
+
+  resultsEl.innerHTML = '<p class="course-search-status">Loading course details…</p>';
+  teeEl.classList.add('hidden');
+
+  try {
+    const res = await fetch(`${GOLF_API_BASE}/courses/${courseId}`, {
+      headers: { 'Authorization': `Key ${GOLF_API_KEY}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const course = data.course;
+
+    // Auto-fill course name
+    const fullName = course.club_name + (course.course_name && course.course_name !== course.club_name ? ` — ${course.course_name}` : '');
+    $(`round-name-${roundIndex}`).value = fullName;
+
+    // Filter to male tees (fallback: all tees)
+    const allTees  = course.tees || [];
+    const maleTees = allTees.filter(t => t.tee_type === 'male');
+    const tees     = maleTees.length > 0 ? maleTees : allTees;
+
+    resultsEl.classList.add('hidden');
+
+    if (tees.length === 0) {
+      teeEl.innerHTML = '<p class="course-search-status">No tee data available for this course.</p>';
+      teeEl.classList.remove('hidden');
+      return;
+    }
+
+    // Build tee selector
+    teeEl.innerHTML = '<p class="tee-selector-label">Select your tee:</p>';
+    tees.forEach(tee => {
+      const btn = document.createElement('button');
+      btn.className = 'tee-option-btn';
+      btn.type = 'button';
+      btn.innerHTML = `
+        <span class="tee-name">${escHtml(tee.tee_name)}</span>
+        <span class="tee-details">CR ${tee.course_rating} &middot; Slope ${tee.slope_rating} &middot; Par ${tee.par_total}</span>
+      `;
+      btn.onclick = () => applyTeeData(tee, roundIndex);
+      teeEl.appendChild(btn);
+    });
+    teeEl.classList.remove('hidden');
+  } catch (err) {
+    resultsEl.innerHTML = `<p class="course-search-status course-search-error">Failed to load course: ${escHtml(err.message)}</p>`;
+    resultsEl.classList.remove('hidden');
+  }
+}
+
+function applyTeeData(tee, roundIndex) {
+  // Fill course rating, slope, par
+  $(`round-course-rating-${roundIndex}`).value = tee.course_rating || '';
+  $(`round-slope-${roundIndex}`).value          = tee.slope_rating  || '';
+  $(`round-course-par-${roundIndex}`).value     = tee.par_total     || '';
+
+  // Store per-hole data in pendingCourseHoles
+  if (tee.holes && tee.holes.length > 0) {
+    const holes = tee.holes.slice(0, 18).map((hole, idx) => ({
+      par: hole.par || DEFAULT_PARS[idx],
+      si:  hole.handicap || (idx + 1),
+    }));
+    pendingCourseHoles[roundIndex] = holes;
+    const statusEl = $(`course-status-${roundIndex}`);
+    if (statusEl) statusEl.textContent = '✅ Holes set (from API)';
+  }
+
+  // Confirm selection in the tee selector area
+  const teeEl = $(`tee-selector-${roundIndex}`);
+  teeEl.innerHTML = `<p class="tee-selected-msg">✅ ${escHtml(tee.tee_name)} tee selected — all fields auto-filled!</p>`;
 }
 
 // =====================================================

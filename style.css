@@ -438,6 +438,119 @@ body {
   font-weight: 400;
 }
 
+/* ---- Golf Course API Search ---- */
+.course-search-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 4px;
+}
+.course-search-input {
+  flex: 1;
+  margin-top: 0 !important;
+}
+.course-search-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin: 0 !important;
+}
+.course-results {
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: white;
+  margin-top: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.course-result-item {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.course-result-item:last-child { border-bottom: none; }
+.course-result-item:active,
+.course-result-item:hover { background: #f0f7f0; }
+.course-result-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.course-result-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.course-search-status {
+  padding: 12px 14px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+.course-search-error { color: var(--red) !important; }
+.course-search-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-style: italic;
+}
+
+/* ---- Tee Selector ---- */
+.tee-selector {
+  margin-top: 8px;
+}
+.tee-selector-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.tee-option-btn {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: white;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 6px;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.tee-option-btn:active,
+.tee-option-btn:hover {
+  border-color: var(--green);
+  background: #f0f7f0;
+}
+.tee-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--green-dark);
+}
+.tee-details {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.tee-selected-msg {
+  background: #e8f5e9;
+  border-left: 4px solid var(--green);
+  color: var(--green-dark);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
 /* ---- Playing handicap info bar on score screen ---- */
 .hcp-info-bar {
   background: #e8f5e9;
