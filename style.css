@@ -420,3 +420,32 @@ body {
 }
 .modal-actions { display: flex; gap: 12px; }
 .modal-actions .btn { flex: 1; }
+
+/* ---- Course ratings row in admin setup ---- */
+.course-ratings-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.course-rating-field {
+  flex: 1;
+  min-width: 100px;
+}
+.label-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ---- Playing handicap info bar on score screen ---- */
+.hcp-info-bar {
+  background: #e8f5e9;
+  border-left: 4px solid var(--green);
+  color: var(--green-dark);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 8px 16px;
+  margin: 0 0 4px;
+}
+.hcp-info-bar.hidden { display: none; }

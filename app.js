@@ -165,6 +165,20 @@ function initAdminSetup() {
       <h4>Round ${i + 1}</h4>
       <label class="label">Course Name</label>
       <input type="text" class="input" id="round-name-${i}" placeholder="e.g. Costa del Sol Golf" value="${escHtml(round ? round.name || '' : ['Amarilla Golf', 'Golf del Sur', 'Abama Golf'][i] || '')}">
+      <div class="course-ratings-row">
+        <div class="course-rating-field">
+          <label class="label">Slope Rating <span class="label-hint">(55–155)</span></label>
+          <input type="number" class="input" id="round-slope-${i}" placeholder="113" min="55" max="155" step="1" inputmode="numeric" value="${round && round.slope_rating ? round.slope_rating : ''}">
+        </div>
+        <div class="course-rating-field">
+          <label class="label">Course Rating <span class="label-hint">(e.g. 71.5)</span></label>
+          <input type="number" class="input" id="round-course-rating-${i}" placeholder="71.5" min="60" max="80" step="0.1" value="${round && round.course_rating ? round.course_rating : ''}">
+        </div>
+        <div class="course-rating-field">
+          <label class="label">Course Par <span class="label-hint">(total 18 holes)</span></label>
+          <input type="number" class="input" id="round-course-par-${i}" placeholder="72" min="68" max="76" step="1" inputmode="numeric" value="${round && round.course_par ? round.course_par : ''}">
+        </div>
+      </div>
       <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="editCourse(${i})">⛳ Set Hole Pars &amp; SIs</button>
       <span id="course-status-${i}" style="font-size:0.85rem;color:var(--green);margin-left:8px">${round && round.holes ? '✅ Holes set' : ''}</span>
     `;
@@ -252,11 +266,14 @@ function saveSetup() {
   // Collect rounds
   const rounds = [];
   for (let i = 0; i < 3; i++) {
-    const roundName = ($(`round-name-${i}`).value || '').trim() || `Round ${i + 1}`;
+    const roundName   = ($(`round-name-${i}`).value || '').trim() || `Round ${i + 1}`;
+    const slopeRating  = parseFloat($(`round-slope-${i}`).value) || 0;
+    const courseRating = parseFloat($(`round-course-rating-${i}`).value) || 0;
+    const coursePar    = parseInt($(`round-course-par-${i}`).value) || 0;
     const holes = pendingCourseHoles[i]
       || (state.comp && state.comp.rounds && state.comp.rounds[i] && state.comp.rounds[i].holes)
       || DEFAULT_PARS.map((par, idx) => ({ par, si: idx + 1 }));
-    rounds.push({ name: roundName, holes });
+    rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
   }
 
   const comp = { name, adminPin: pin, players, rounds };
@@ -295,6 +312,17 @@ function renderScoreScreen() {
     btn.onclick = () => { state.scoreRound = i; renderScoreScreen(); };
     tabsEl.appendChild(btn);
   });
+
+  // Show course handicap info for current round
+  const currentRound = comp.rounds[state.scoreRound];
+  const effectiveHcp = getEffectiveHandicap(player, currentRound);
+  const hcpInfoEl    = $('score-hcp-info');
+  if (currentRound.slope_rating && currentRound.slope_rating !== 0) {
+    hcpInfoEl.textContent = `HCP Index: ${player.handicap} → Playing Handicap: ${effectiveHcp} (Slope ${currentRound.slope_rating}, CR ${currentRound.course_rating}, Par ${currentRound.course_par})`;
+    hcpInfoEl.classList.remove('hidden');
+  } else {
+    hcpInfoEl.classList.add('hidden');
+  }
 
   // Load scores (live)
   onValue(ref(db, 'scores'), snap => {
@@ -367,8 +395,13 @@ function openHoleModal(holeIdx, holeData, currentGross, player) {
   state.holeModalCtx = { holeIdx, holeData, player };
   modalScore = currentGross || holeData.par;
   $('modal-title').textContent = `Hole ${holeIdx + 1}`;
-  const shots = calcShots(player.handicap, holeData.si);
-  $('modal-info').textContent  = `Par ${holeData.par} · SI ${holeData.si} · HCP ${player.handicap} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
+  const round        = state.comp.rounds[state.scoreRound];
+  const effectiveHcp = getEffectiveHandicap(player, round);
+  const shots        = calcShots(effectiveHcp, holeData.si);
+  const hcpLabel     = (effectiveHcp !== player.handicap)
+    ? `Playing HCP ${effectiveHcp}`
+    : `HCP ${player.handicap}`;
+  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
   updateModalDisplay();
   $('hole-modal').classList.remove('hidden');
 }
@@ -378,7 +411,9 @@ function updateModalDisplay() {
   const ctx = state.holeModalCtx;
   if (!ctx) return;
   const { holeData, player } = ctx;
-  const pts = calcStableford(modalScore, holeData.par, holeData.si, player.handicap);
+  const round        = state.comp.rounds[state.scoreRound];
+  const effectiveHcp = getEffectiveHandicap(player, round);
+  const pts = calcStableford(modalScore, holeData.par, holeData.si, effectiveHcp);
   const labels = ['Double bogey or worse 💀', 'Bogey 🟡', 'Par 🟢', 'Birdie 🔵', 'Eagle ⭐', 'Albatross 🦅'];
   const colors  = ['#bbb', '#888', 'var(--green)', 'var(--blue)', 'var(--gold)', 'var(--red)'];
   $('modal-points').textContent  = `${pts} point${pts !== 1 ? 's' : ''} — ${labels[Math.min(pts, 5)]}`;
@@ -401,13 +436,29 @@ function saveHoleScore() {
   const ctx = state.holeModalCtx;
   if (!ctx) return;
   const { holeIdx, holeData, player } = ctx;
-  const gross  = modalScore;
-  const points = calcStableford(gross, holeData.par, holeData.si, player.handicap);
+  const gross        = modalScore;
+  const round        = state.comp.rounds[state.scoreRound];
+  const effectiveHcp = getEffectiveHandicap(player, round);
+  const points       = calcStableford(gross, holeData.par, holeData.si, effectiveHcp);
 
   set(ref(db, `scores/${state.scoreRound}/${player.id}/${holeIdx}`), { gross, points })
     .then(() => { closeHoleModal(); renderScoreScreen(); });
 }
 window.saveHoleScore = saveHoleScore;
+
+// =====================================================
+// COURSE HANDICAP CALCULATION
+// =====================================================
+function calcCourseHandicap(handicapIndex, slopeRating, courseRating, coursePar) {
+  // Course Handicap = ROUND(HI × (Slope ÷ 113) + (CourseRating − CoursePar))
+  return Math.round(handicapIndex * (slopeRating / 113) + (courseRating - coursePar));
+}
+
+function getEffectiveHandicap(player, round) {
+  // Falls back to raw handicap index if slope_rating not set
+  if (!round || !round.slope_rating || round.slope_rating === 0) return player.handicap;
+  return calcCourseHandicap(player.handicap, round.slope_rating, round.course_rating || 0, round.course_par || 72);
+}
 
 // =====================================================
 // STABLEFORD CALCULATION
@@ -537,6 +588,19 @@ function renderLbTable(display) {
   display.forEach((t, i) => {
     const row = document.createElement('div');
     row.className = 'lb-row';
+
+    // Build HCP display — show playing handicap per round when available
+    let hcpDisplay;
+    if (state.lbRound === 'overall') {
+      hcpDisplay = `HCP ${t.handicap}`;
+    } else {
+      const round        = state.comp.rounds[state.lbRound];
+      const playingHcp   = getEffectiveHandicap(t, round);
+      hcpDisplay = (playingHcp !== t.handicap)
+        ? `HCP ${t.handicap} · Playing ${playingHcp}`
+        : `HCP ${t.handicap}`;
+    }
+
     const roundBreakdown = state.lbRound === 'overall'
       ? ' · ' + t.roundPts.map((r, ri) => `R${ri+1}:${r.pts}`).join(' ')
       : '';
@@ -544,7 +608,7 @@ function renderLbTable(display) {
       <div class="lb-rank ${classes[i] || ''}">${medals[i] || (i + 1)}</div>
       <div style="flex:1">
         <div class="lb-name">${escHtml(t.name)}</div>
-        <div class="lb-sub">HCP ${t.handicap} · ${t.displayHoles} holes${roundBreakdown}</div>
+        <div class="lb-sub">${hcpDisplay} · ${t.displayHoles} holes${roundBreakdown}</div>
       </div>
       <div class="lb-pts">${t.displayPts}</div>
       ${t.skins > 0 ? `<div class="lb-skins">🏅 ${t.skins}</div>` : ''}
