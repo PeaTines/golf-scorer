@@ -66,33 +66,20 @@ function initHome() {
   const list = $('lobby-list');
   list.innerHTML = '';
 
-  // Load competitions and legacy competition in parallel, render when both done
-  let compsData = {};
-  let legacyData = null;
-  let loaded = 0;
-
-  function onBothLoaded() {
-    loaded++;
-    if (loaded < 2) return;
-    state.allComps = compsData;
-    renderLobby(legacyData);
-    $('lobby-loading').classList.add('hidden');
-  }
-
-  Promise.all([
-    get(ref(db, 'competitions')).then(snap => { compsData = snap.val() || {}; }).catch(() => { compsData = {}; }),
-    get(ref(db, 'competition')).then(snap => { legacyData = snap.val(); }).catch(() => { legacyData = null; })
-  ]).then(() => {
-    state.allComps = compsData;
-    renderLobby(legacyData);
-    $('lobby-loading').classList.add('hidden');
-  }).catch(() => {
-    $('lobby-loading').classList.add('hidden');
-    $('lobby-list').innerHTML = '<p class="info-text">Error loading competitions. Check your connection and refresh.</p>';
-  });
+  get(ref(db, 'competitions'))
+    .then(snap => {
+      state.allComps = snap.val() || {};
+      renderLobby();
+    })
+    .catch(err => {
+      list.innerHTML = '<p class="info-text">Error loading competitions. Check your connection and refresh.</p>';
+    })
+    .finally(() => {
+      $('lobby-loading').classList.add('hidden');
+    });
 }
 
-function renderLobby(legacyComp) {
+function renderLobby() {
   const list = $('lobby-list');
   list.innerHTML = '';
 
@@ -101,18 +88,8 @@ function renderLobby(legacyComp) {
     ...data.meta
   })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-  if (legacyComp && legacyComp.name) {
-    comps.push({
-      id: 'legacy',
-      name: legacyComp.name + ' (legacy)',
-      players: legacyComp.players,
-      rounds: legacyComp.rounds,
-      isLegacy: true
-    });
-  }
-
   if (comps.length === 0) {
-    list.innerHTML = '<p class="info-text">No competitions found. Create one to get started!</p>';
+    list.innerHTML = '<p class="info-text">No competitions yet. Create one to get started!</p>';
     return;
   }
 
@@ -130,7 +107,7 @@ function renderLobby(legacyComp) {
       </div>
       <div class="comp-card-actions">
         <button class="btn btn-primary btn-sm" onclick="openCompetition('${c.id}')">Open</button>
-        ${!c.isLegacy ? `<button class="btn btn-outline btn-sm" onclick="copyCompetition('${c.id}')">Copy</button>` : ''}
+        <button class="btn btn-outline btn-sm" onclick="copyCompetition('${c.id}')">Copy</button>
       </div>
     `;
     list.appendChild(card);
@@ -189,8 +166,8 @@ function incrementName(name) {
 function initCompMenu() {
   if (!state.activeCompId) { showScreen('screen-home'); return; }
 
-  const path = state.activeCompId === 'legacy' ? 'competition' : `competitions/${state.activeCompId}/meta`;
-  
+  const path = `competitions/${state.activeCompId}/meta`;
+
   onValue(ref(db, path), snap => {
     state.comp = snap.val();
     if (!state.comp) {
@@ -259,14 +236,10 @@ window.checkAdminPin = checkAdminPin;
 
 function resetCompetition() {
   if (!confirm('⚠️ This will delete ALL scores and competition data for this competition. Are you sure?')) return;
-  const path = state.activeCompId === 'legacy' ? '' : `competitions/${state.activeCompId}`;
-  if (path === '') {
-     remove(ref(db, 'competition'));
-     remove(ref(db, 'scores'));
-  } else {
-     remove(ref(db, path));
-  }
+  remove(ref(db, `competitions/${state.activeCompId}`));
   state.comp = null;
+  state.activeCompId = null;
+  localStorage.removeItem('activeCompId');
   state.isAdmin = false;
   showScreen('screen-home');
 }
@@ -425,9 +398,8 @@ function saveSetup() {
     rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
   }
 
-  const isLegacy = state.activeCompId === 'legacy';
   const isNew = !state.activeCompId || state.isCopying;
-  
+
   const compMeta = { name, adminPin: pin, players, rounds, updatedAt: Date.now() };
   if (isNew) {
     compMeta.createdAt = Date.now();
@@ -440,9 +412,7 @@ function saveSetup() {
     compId = 'comp_' + Date.now();
   }
 
-  const path = isLegacy ? 'competition' : `competitions/${compId}/meta`;
-  
-  set(ref(db, path), compMeta)
+  set(ref(db, `competitions/${compId}/meta`), compMeta)
     .then(() => {
       state.comp = compMeta;
       state.activeCompId = compId;
@@ -464,7 +434,7 @@ function showSetupError(msg) {
 // SCORE ENTRY
 // =====================================================
 function getScorePath() {
-  return state.activeCompId === 'legacy' ? 'scores' : `competitions/${state.activeCompId}/scores`;
+  return `competitions/${state.activeCompId}/scores`;
 }
 
 function renderScoreScreen() {
@@ -613,7 +583,7 @@ function saveHoleScore() {
   const effectiveHcp = getEffectiveHandicap(player, round);
   const points       = calcStableford(gross, holeData.par, holeData.si, effectiveHcp);
 
-  set(ref(db, `scores/${state.scoreRound}/${player.id}/${holeIdx}`), { gross, points })
+  set(ref(db, `${getScorePath()}/${state.scoreRound}/${player.id}/${holeIdx}`), { gross, points })
     .then(() => { closeHoleModal(); renderScoreScreen(); });
 }
 window.saveHoleScore = saveHoleScore;
@@ -710,7 +680,7 @@ function renderLeaderboard() {
   });
 
   // Live scores
-  onValue(ref(db, 'scores'), snap => {
+  onValue(ref(db, getScorePath()), snap => {
     const allScores = snap.val() || {};
     const players   = comp.players ? Object.values(comp.players) : [];
 

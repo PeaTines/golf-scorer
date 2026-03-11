@@ -1,13 +1,5 @@
 {
   "rules": {
-    "competition": {
-      ".read": true,
-      ".write": true
-    },
-    "scores": {
-      ".read": true,
-      ".write": true
-    },
     "competitions": {
       "$compId": {
         "meta": {
