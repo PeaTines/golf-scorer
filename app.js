@@ -4,7 +4,7 @@
 
 // --- Firebase Setup (ES Module imports) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+import { getDatabase, ref, set, get, onValue, remove } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
@@ -79,21 +79,17 @@ function initHome() {
     $('lobby-loading').classList.add('hidden');
   }
 
-  onValue(ref(db, 'competitions'), snap => {
-    compsData = snap.val() || {};
-    onBothLoaded();
-  }, err => {
-    compsData = {};
-    onBothLoaded();
-  }, { onlyOnce: true });
-
-  onValue(ref(db, 'competition'), snap => {
-    legacyData = snap.val();
-    onBothLoaded();
-  }, err => {
-    legacyData = null;
-    onBothLoaded();
-  }, { onlyOnce: true });
+  Promise.all([
+    get(ref(db, 'competitions')).then(snap => { compsData = snap.val() || {}; }).catch(() => { compsData = {}; }),
+    get(ref(db, 'competition')).then(snap => { legacyData = snap.val(); }).catch(() => { legacyData = null; })
+  ]).then(() => {
+    state.allComps = compsData;
+    renderLobby(legacyData);
+    $('lobby-loading').classList.add('hidden');
+  }).catch(() => {
+    $('lobby-loading').classList.add('hidden');
+    $('lobby-list').innerHTML = '<p class="info-text">Error loading competitions. Check your connection and refresh.</p>';
+  });
 }
 
 function renderLobby(legacyComp) {
