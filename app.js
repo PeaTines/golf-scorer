@@ -66,16 +66,33 @@ function initHome() {
   const list = $('lobby-list');
   list.innerHTML = '';
 
-  // Listen to all competitions
+  // Load competitions and legacy competition in parallel, render when both done
+  let compsData = {};
+  let legacyData = null;
+  let loaded = 0;
+
+  function onBothLoaded() {
+    loaded++;
+    if (loaded < 2) return;
+    state.allComps = compsData;
+    renderLobby(legacyData);
+    $('lobby-loading').classList.add('hidden');
+  }
+
   onValue(ref(db, 'competitions'), snap => {
-    state.allComps = snap.val() || {};
-    
-    // Also check for legacy competition
-    onValue(ref(db, 'competition'), legacySnap => {
-      const legacyComp = legacySnap.val();
-      renderLobby(legacyComp);
-      $('lobby-loading').classList.add('hidden');
-    }, { onlyOnce: true });
+    compsData = snap.val() || {};
+    onBothLoaded();
+  }, err => {
+    compsData = {};
+    onBothLoaded();
+  }, { onlyOnce: true });
+
+  onValue(ref(db, 'competition'), snap => {
+    legacyData = snap.val();
+    onBothLoaded();
+  }, err => {
+    legacyData = null;
+    onBothLoaded();
   }, { onlyOnce: true });
 }
 
