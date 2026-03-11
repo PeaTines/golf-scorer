@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "competition": {
+      ".read": true,
+      ".write": true
+    },
+    "scores": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

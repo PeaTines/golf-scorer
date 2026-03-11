@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>⛳ Golf Scorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== SCREENS ===================== -->
+
+<!-- Home / Join Screen -->
+<div id="screen-home" class="screen active">
+  <div class="hero">
+    <div class="hero-emoji">⛳</div>
+    <h1>Golf Scorer</h1>
+    <p class="subtitle">Holiday Golf Competition</p>
+  </div>
+  <div class="card">
+    <div id="home-loading" class="loading-msg">Loading competition...</div>
+    <div id="home-no-comp" class="hidden">
+      <p class="info-text">No competition set up yet.</p>
+      <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">🏌️ Set Up Competition</button>
+    </div>
+    <div id="home-comp-found" class="hidden">
+      <h2 id="home-comp-name" class="comp-name"></h2>
+      <p id="home-comp-info" class="info-text"></p>
+      <div id="home-player-list" class="player-grid"></div>
+      <div class="divider"></div>
+      <button class="btn btn-outline btn-sm" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+      <button class="btn btn-outline btn-sm" onclick="showAdminLogin()">🔧 Admin</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Login -->
+<div id="screen-admin-login" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <h2>Admin Access</h2>
+  </div>
+  <div class="card">
+    <p class="info-text">Enter the admin PIN to manage the competition.</p>
+    <input type="number" id="admin-pin-input" class="input-lg" placeholder="PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric">
+    <button class="btn btn-primary btn-lg" onclick="checkAdminPin()">Unlock 🔓</button>
+    <p id="admin-pin-error" class="error-text hidden">Wrong PIN. Try again.</p>
+  </div>
+</div>
+
+<!-- Admin Setup Screen -->
+<div id="screen-admin-setup" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <h2>⚙️ Competition Setup</h2>
+  </div>
+  <div class="card">
+    <label class="label">Competition Name</label>
+    <input type="text" id="setup-comp-name" class="input" placeholder="e.g. Marbella Golf 2025">
+    
+    <label class="label">Admin PIN (4 digits)</label>
+    <input type="number" id="setup-admin-pin" class="input" placeholder="e.g. 1234" maxlength="4" inputmode="numeric">
+
+    <div class="divider"></div>
+    <h3>Players (up to 8)</h3>
+    <div id="players-list">
+      <!-- Dynamically added -->
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="addPlayerRow()">+ Add Player</button>
+
+    <div class="divider"></div>
+    <h3>Rounds / Courses</h3>
+    <div id="rounds-setup">
+      <!-- Dynamically added -->
+    </div>
+
+    <div class="divider"></div>
+    <button class="btn btn-success btn-lg" onclick="saveSetup()">💾 Save & Start Competition</button>
+    <p id="setup-error" class="error-text hidden"></p>
+  </div>
+</div>
+
+<!-- Course Detail Setup (SI + Par per hole) -->
+<div id="screen-course-setup" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-admin-setup')">← Back</button>
+    <h2 id="course-setup-title">Course Setup</h2>
+  </div>
+  <div class="card">
+    <p class="info-text">Enter par and stroke index (SI) for each hole. SI 1 = hardest hole.</p>
+    <div class="hole-header-row">
+      <span>Hole</span><span>Par</span><span>SI</span>
+    </div>
+    <div id="course-holes-list"></div>
+    <button class="btn btn-success btn-lg" onclick="saveCourseSetup()">✅ Done</button>
+  </div>
+</div>
+
+<!-- Player Score Entry -->
+<div id="screen-score" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <h2 id="score-player-name"></h2>
+  </div>
+  <div class="round-tabs" id="score-round-tabs"></div>
+  <div id="score-content">
+    <div class="card score-summary-card">
+      <div class="score-summary">
+        <div class="score-stat">
+          <span class="score-stat-val" id="score-total-pts">0</span>
+          <span class="score-stat-label">Points</span>
+        </div>
+        <div class="score-stat">
+          <span class="score-stat-val" id="score-holes-played">0</span>
+          <span class="score-stat-label">Holes</span>
+        </div>
+        <div class="score-stat">
+          <span class="score-stat-val" id="score-skins-won">0</span>
+          <span class="score-stat-label">Skins</span>
+        </div>
+      </div>
+    </div>
+    <div id="holes-list" class="holes-container"></div>
+  </div>
+</div>
+
+<!-- Leaderboard -->
+<div id="screen-leaderboard" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <h2>📊 Leaderboard</h2>
+  </div>
+  <div class="round-tabs" id="lb-round-tabs"></div>
+  <div id="leaderboard-content">
+    <div class="card" id="lb-table-card">
+      <div id="lb-table"></div>
+    </div>
+    <div class="card" id="skins-card">
+      <h3>🏅 Skins</h3>
+      <div id="skins-table"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Panel -->
+<div id="screen-admin-panel" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <h2>🔧 Admin Panel</h2>
+  </div>
+  <div class="card">
+    <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">✏️ Edit Competition Setup</button>
+    <button class="btn btn-outline btn-lg" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+    <div class="divider"></div>
+    <button class="btn btn-danger btn-lg" onclick="resetCompetition()">🗑️ Reset Competition</button>
+  </div>
+</div>
+
+<!-- Hole Score Modal -->
+<div id="hole-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeHoleModal()"></div>
+  <div class="modal-content">
+    <h3 id="modal-title">Hole 1</h3>
+    <p id="modal-info" class="modal-info"></p>
+    <div class="score-picker">
+      <button class="btn-score-adj" onclick="adjustScore(-1)">−</button>
+      <span id="modal-score" class="score-display">4</span>
+      <button class="btn-score-adj" onclick="adjustScore(1)">+</button>
+    </div>
+    <p id="modal-points" class="points-preview"></p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeHoleModal()">Cancel</button>
+      <button class="btn btn-success" onclick="saveHoleScore()">Save ✅</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
