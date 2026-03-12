@@ -82,6 +82,7 @@
     <div id="rounds-setup">
       <!-- Dynamically added -->
     </div>
+    <button class="btn btn-outline btn-sm" onclick="addRoundBlock()">➕ Add Course</button>
 
     <div class="divider"></div>
     <button class="btn btn-success btn-lg" onclick="saveSetup()">💾 Save & Start Competition</button>
@@ -180,6 +181,7 @@
     <p id="modal-points" class="points-preview"></p>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeHoleModal()">Cancel</button>
+      <button class="btn btn-success" id="save-next-btn" onclick="saveAndNextHole()">Save & Next →</button>
       <button class="btn btn-success" onclick="saveHoleScore()">Save ✅</button>
     </div>
   </div>

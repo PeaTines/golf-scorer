@@ -32,7 +32,14 @@ const state = {
 };
 
 // Temp storage for course holes being set up (before saving to Firebase)
+// Keyed by block ID (unique per block in the dynamic rounds setup)
 const pendingCourseHoles = {};
+
+// Tracks which original round index a dynamic block corresponds to (edit mode)
+const blockOriginalRound = {};
+
+// Counter for assigning unique IDs to round blocks
+let courseBlockCounter = 0;
 
 // --- Utility ---
 const $ = id => document.getElementById(id);
@@ -117,7 +124,7 @@ function renderLobby() {
 function createNewCompetition() {
   state.activeCompId = null;
   state.comp = null;
-  state.isAdmin = true; // Allow setup
+  state.isAdmin = true;
   state.isCopying = false;
   showScreen('screen-admin-setup');
 }
@@ -138,15 +145,14 @@ function copyCompetition(compId) {
   state.activeCompId = null;
   state.isCopying = true;
   state.isAdmin = true;
-  
-  // Pre-fill state.comp for setup form
+
   const meta = sourceComp.meta;
   state.comp = {
     ...meta,
     name: incrementName(meta.name),
-    adminPin: '' // Clear pin
+    adminPin: ''
   };
-  
+
   showScreen('screen-admin-setup');
 }
 window.copyCompetition = copyCompetition;
@@ -161,7 +167,7 @@ function incrementName(name) {
 }
 
 // =====================================================
-// COMPETITION MENU (Old renderHome)
+// COMPETITION MENU
 // =====================================================
 function initCompMenu() {
   if (!state.activeCompId) { showScreen('screen-home'); return; }
@@ -220,7 +226,6 @@ window.showAdminLogin = showAdminLogin;
 function checkAdminPin() {
   const pin = $('admin-pin-input').value;
   if (!state.comp || !state.comp.adminPin) {
-    // Should not happen in new flow but as safety:
     state.isAdmin = true;
     showScreen('screen-admin-setup');
     return;
@@ -246,12 +251,99 @@ function resetCompetition() {
 window.resetCompetition = resetCompetition;
 
 // =====================================================
-// ADMIN SETUP
+// ADMIN SETUP — Dynamic Round Blocks
 // =====================================================
+
+function buildRoundBlockHTML(blockId, round) {
+  return `
+    <div class="round-block-header">
+      <h4 class="round-block-title"></h4>
+      <button type="button" class="btn btn-danger btn-sm remove-course-btn" onclick="removeRoundBlock(${blockId})">🗑 Remove</button>
+    </div>
+    <label class="label">Find Course <span class="label-hint">(optional)</span></label>
+    <div class="course-search-row">
+      <input type="text" class="input course-search-input" id="course-search-${blockId}" placeholder="e.g. Costa del Sol Golf" onkeydown="if(event.key==='Enter')searchCourse(${blockId})">
+      <button class="btn btn-outline btn-sm course-search-btn" onclick="searchCourse(${blockId})">🔍 Search</button>
+    </div>
+    <div id="course-results-${blockId}" class="course-results hidden"></div>
+    <div id="tee-selector-${blockId}" class="tee-selector hidden"></div>
+    <p class="course-search-hint">Course not found? Enter details manually.</p>
+    <label class="label">Course Name</label>
+    <input type="text" class="input" id="round-name-${blockId}" placeholder="Course name" value="${escHtml(round ? round.name || '' : '')}">
+    <div class="course-ratings-row">
+      <div class="course-rating-field">
+        <label class="label">Slope Rating <span class="label-hint">(55–155)</span></label>
+        <input type="number" class="input" id="round-slope-${blockId}" placeholder="113" min="55" max="155" step="1" inputmode="numeric" value="${round && round.slope_rating ? round.slope_rating : ''}">
+      </div>
+      <div class="course-rating-field">
+        <label class="label">Course Rating <span class="label-hint">(e.g. 71.5)</span></label>
+        <input type="number" class="input" id="round-course-rating-${blockId}" placeholder="71.5" min="60" max="80" step="0.1" value="${round && round.course_rating ? round.course_rating : ''}">
+      </div>
+      <div class="course-rating-field">
+        <label class="label">Course Par <span class="label-hint">(total 18 holes)</span></label>
+        <input type="number" class="input" id="round-course-par-${blockId}" placeholder="72" min="68" max="76" step="1" inputmode="numeric" value="${round && round.course_par ? round.course_par : ''}">
+      </div>
+    </div>
+    <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="editCourse(${blockId})">⛳ Set Hole Pars &amp; SIs</button>
+    <span id="course-status-${blockId}" style="font-size:0.85rem;color:var(--green);margin-left:8px">${round && round.holes ? '✅ Holes set' : ''}</span>
+  `;
+}
+
+function createRoundBlock(round, originalIndex) {
+  const blockId = courseBlockCounter++;
+  if (originalIndex !== undefined) {
+    blockOriginalRound[blockId] = originalIndex;
+  }
+  const div = document.createElement('div');
+  div.className = 'round-setup-block';
+  div.dataset.blockId = blockId;
+  div.innerHTML = buildRoundBlockHTML(blockId, round);
+  return div;
+}
+
+function updateRoundBlockHeaders() {
+  const blocks = document.querySelectorAll('#rounds-setup .round-setup-block');
+  blocks.forEach((block, i) => {
+    const titleEl = block.querySelector('.round-block-title');
+    if (titleEl) titleEl.textContent = `Course ${i + 1}`;
+  });
+}
+
+function updateRemoveButtons() {
+  const blocks = document.querySelectorAll('#rounds-setup .round-setup-block');
+  blocks.forEach(block => {
+    const removeBtn = block.querySelector('.remove-course-btn');
+    if (removeBtn) {
+      removeBtn.style.display = blocks.length > 1 ? '' : 'none';
+    }
+  });
+}
+
+function addRoundBlock() {
+  const blocks = document.querySelectorAll('#rounds-setup .round-setup-block');
+  if (blocks.length >= 4) {
+    alert('Maximum 4 courses allowed.');
+    return;
+  }
+  const div = createRoundBlock(null, undefined);
+  $('rounds-setup').appendChild(div);
+  updateRoundBlockHeaders();
+  updateRemoveButtons();
+}
+window.addRoundBlock = addRoundBlock;
+
+function removeRoundBlock(blockId) {
+  const block = document.querySelector(`#rounds-setup .round-setup-block[data-block-id="${blockId}"]`);
+  if (block) block.remove();
+  updateRoundBlockHeaders();
+  updateRemoveButtons();
+}
+window.removeRoundBlock = removeRoundBlock;
+
 function initAdminSetup() {
   const c = state.comp;
   const isEdit = !!state.activeCompId && !state.isCopying;
-  
+
   $('setup-title').textContent = isEdit ? '✏️ Edit Competition' : (state.isCopying ? '👯 Copy Competition' : '⚙️ New Competition');
   $('setup-back-btn').onclick = () => showScreen(isEdit ? 'screen-admin-panel' : 'screen-home');
 
@@ -268,44 +360,27 @@ function initAdminSetup() {
     players.forEach(p => addPlayerRow(p.name, p.handicap));
   }
 
-  // Rounds
+  // Reset block state for fresh init
+  courseBlockCounter = 0;
+  Object.keys(blockOriginalRound).forEach(k => delete blockOriginalRound[k]);
+  Object.keys(pendingCourseHoles).forEach(k => delete pendingCourseHoles[k]);
+
+  // Rounds — dynamic blocks
   const roundsDiv = $('rounds-setup');
   roundsDiv.innerHTML = '';
-  for (let i = 0; i < 3; i++) {
-    const round = c && c.rounds && c.rounds[i] ? c.rounds[i] : null;
-    const div = document.createElement('div');
-    div.className = 'round-setup-block';
-    div.innerHTML = `
-      <h4>Round ${i + 1}</h4>
-      <label class="label">Find Course <span class="label-hint">(optional)</span></label>
-      <div class="course-search-row">
-        <input type="text" class="input course-search-input" id="course-search-${i}" placeholder="e.g. Costa del Sol Golf" onkeydown="if(event.key==='Enter')searchCourse(${i})">
-        <button class="btn btn-outline btn-sm course-search-btn" onclick="searchCourse(${i})">🔍 Search</button>
-      </div>
-      <div id="course-results-${i}" class="course-results hidden"></div>
-      <div id="tee-selector-${i}" class="tee-selector hidden"></div>
-      <p class="course-search-hint">Course not found? Enter details manually.</p>
-      <label class="label">Course Name</label>
-      <input type="text" class="input" id="round-name-${i}" placeholder="e.g. Costa del Sol Golf" value="${escHtml(round ? round.name || '' : ['Amarilla Golf', 'Golf del Sur', 'Abama Golf'][i] || '')}">
-      <div class="course-ratings-row">
-        <div class="course-rating-field">
-          <label class="label">Slope Rating <span class="label-hint">(55–155)</span></label>
-          <input type="number" class="input" id="round-slope-${i}" placeholder="113" min="55" max="155" step="1" inputmode="numeric" value="${round && round.slope_rating ? round.slope_rating : ''}">
-        </div>
-        <div class="course-rating-field">
-          <label class="label">Course Rating <span class="label-hint">(e.g. 71.5)</span></label>
-          <input type="number" class="input" id="round-course-rating-${i}" placeholder="71.5" min="60" max="80" step="0.1" value="${round && round.course_rating ? round.course_rating : ''}">
-        </div>
-        <div class="course-rating-field">
-          <label class="label">Course Par <span class="label-hint">(total 18 holes)</span></label>
-          <input type="number" class="input" id="round-course-par-${i}" placeholder="72" min="68" max="76" step="1" inputmode="numeric" value="${round && round.course_par ? round.course_par : ''}">
-        </div>
-      </div>
-      <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="editCourse(${i})">⛳ Set Hole Pars &amp; SIs</button>
-      <span id="course-status-${i}" style="font-size:0.85rem;color:var(--green);margin-left:8px">${round && round.holes ? '✅ Holes set' : ''}</span>
-    `;
+
+  const existingRounds = c && c.rounds ? c.rounds : [];
+  const numBlocks = existingRounds.length > 0 ? existingRounds.length : 1;
+
+  for (let i = 0; i < numBlocks; i++) {
+    const round = existingRounds[i] || null;
+    const div = createRoundBlock(round, i);
     roundsDiv.appendChild(div);
   }
+
+  updateRoundBlockHeaders();
+  updateRemoveButtons();
+
   $('setup-error').classList.add('hidden');
 }
 
@@ -324,13 +399,21 @@ function addPlayerRow(name = '', hcp = '') {
 }
 window.addPlayerRow = addPlayerRow;
 
-function editCourse(roundIndex) {
-  state.editingCourse = roundIndex;
-  $('course-setup-title').textContent = `Round ${roundIndex + 1} — Hole Setup`;
+function editCourse(blockId) {
+  state.editingCourse = blockId;
+  // Determine display title from DOM position
+  const blocks = Array.from(document.querySelectorAll('#rounds-setup .round-setup-block'));
+  const pos = blocks.findIndex(b => b.dataset.blockId == blockId);
+  $('course-setup-title').textContent = `Course ${pos + 1} — Hole Setup`;
 
-  const existing = pendingCourseHoles[roundIndex]
-    || (state.comp && state.comp.rounds && state.comp.rounds[roundIndex] && state.comp.rounds[roundIndex].holes)
-    || null;
+  // Existing holes: from pending, or from original round data
+  let existing = pendingCourseHoles[blockId] || null;
+  if (!existing && blockOriginalRound[blockId] !== undefined) {
+    const origIdx = blockOriginalRound[blockId];
+    existing = state.comp && state.comp.rounds && state.comp.rounds[origIdx]
+      ? state.comp.rounds[origIdx].holes
+      : null;
+  }
 
   const list = $('course-holes-list');
   list.innerHTML = '';
@@ -368,7 +451,51 @@ function saveCourseSetup() {
 }
 window.saveCourseSetup = saveCourseSetup;
 
-function saveSetup() {
+// =====================================================
+// COURSE PROPERTY COMPARISON (for recalculation prompt)
+// =====================================================
+function coursePropertiesChanged(oldRound, newRound) {
+  if (!oldRound || !newRound) return false;
+  if (oldRound.slope_rating !== newRound.slope_rating) return true;
+  if (oldRound.course_rating !== newRound.course_rating) return true;
+  if (oldRound.course_par !== newRound.course_par) return true;
+  if (!oldRound.holes || !newRound.holes) return false;
+  for (let h = 0; h < 18; h++) {
+    const oh = oldRound.holes[h];
+    const nh = newRound.holes[h];
+    if (!oh || !nh) continue;
+    if (oh.par !== nh.par) return true;
+    if (oh.si  !== nh.si)  return true;
+  }
+  return false;
+}
+
+async function recalculateRoundScores(compId, roundIndex, round, roundScores, players) {
+  for (const [playerId, playerScores] of Object.entries(roundScores)) {
+    const player = players[playerId];
+    if (!player) continue;
+
+    const effectiveHcp = getEffectiveHandicap(player, round);
+
+    for (const [holeIdxStr, hs] of Object.entries(playerScores)) {
+      const holeIdx = parseInt(holeIdxStr);
+      if (!hs || !hs.gross || hs.gross <= 0) continue;
+      const hole = round.holes[holeIdx];
+      if (!hole) continue;
+
+      const points = calcStableford(hs.gross, hole.par, hole.si, effectiveHcp);
+      await set(
+        ref(db, `competitions/${compId}/scores/${roundIndex}/${playerId}/${holeIdx}`),
+        { gross: hs.gross, points }
+      );
+    }
+  }
+}
+
+// =====================================================
+// SAVE SETUP
+// =====================================================
+async function saveSetup() {
   const name = $('setup-comp-name').value.trim();
   const pin  = $('setup-admin-pin').value.trim();
   if (!name) { showSetupError('Please enter a competition name.'); return; }
@@ -388,18 +515,29 @@ function saveSetup() {
   });
   if (Object.keys(players).length === 0) { showSetupError('Please add at least one player.'); return; }
 
-  // Collect rounds
+  // Collect rounds from dynamic DOM blocks (in DOM order)
+  const roundBlocks = document.querySelectorAll('#rounds-setup .round-setup-block');
+  if (roundBlocks.length === 0) { showSetupError('Please add at least one course.'); return; }
+
   const rounds = [];
-  for (let i = 0; i < 3; i++) {
-    const roundName   = ($(`round-name-${i}`).value || '').trim() || `Round ${i + 1}`;
-    const slopeRating  = parseFloat($(`round-slope-${i}`).value) || 0;
-    const courseRating = parseFloat($(`round-course-rating-${i}`).value) || 0;
-    const coursePar    = parseInt($(`round-course-par-${i}`).value) || 0;
-    const holes = pendingCourseHoles[i]
-      || (state.comp && state.comp.rounds && state.comp.rounds[i] && state.comp.rounds[i].holes)
-      || DEFAULT_PARS.map((par, idx) => ({ par, si: idx + 1 }));
+  roundBlocks.forEach((block, pos) => {
+    const bid = block.dataset.blockId;
+    const roundName   = ($(`round-name-${bid}`)?.value || '').trim() || `Round ${pos + 1}`;
+    const slopeRating  = parseFloat($(`round-slope-${bid}`)?.value) || 0;
+    const courseRating = parseFloat($(`round-course-rating-${bid}`)?.value) || 0;
+    const coursePar    = parseInt($(`round-course-par-${bid}`)?.value) || 0;
+
+    let holes;
+    if (pendingCourseHoles[bid]) {
+      holes = pendingCourseHoles[bid];
+    } else if (blockOriginalRound[bid] !== undefined && state.comp && state.comp.rounds && state.comp.rounds[blockOriginalRound[bid]]) {
+      holes = state.comp.rounds[blockOriginalRound[bid]].holes;
+    } else {
+      holes = DEFAULT_PARS.map((par, idx) => ({ par, si: idx + 1 }));
+    }
+
     rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
-  }
+  });
 
   const isNew = !state.activeCompId || state.isCopying;
 
@@ -415,15 +553,56 @@ function saveSetup() {
     compId = 'comp_' + Date.now();
   }
 
-  set(ref(db, `competitions/${compId}/meta`), compMeta)
-    .then(() => {
-      state.comp = compMeta;
-      state.activeCompId = compId;
-      state.isCopying = false;
-      localStorage.setItem('activeCompId', compId);
-      showScreen('screen-comp-menu');
-    })
-    .catch(err => showSetupError('Save failed: ' + err.message));
+  try {
+    await set(ref(db, `competitions/${compId}/meta`), compMeta);
+
+    // If editing (not new/copy), check if course properties changed and prompt recalculation
+    if (!isNew && state.comp && state.comp.rounds) {
+      const oldRounds = state.comp.rounds;
+      // Check each round position that exists in both old and new
+      const checkCount = Math.min(oldRounds.length, rounds.length);
+
+      for (let ri = 0; ri < checkCount; ri++) {
+        // Find the blockId that maps to original round ri (if it still exists in DOM)
+        // We stored blockOriginalRound[blockId] = originalIndex when creating blocks
+        // Find the DOM block at position ri
+        const blockAtPos = roundBlocks[ri];
+        const bid = blockAtPos ? blockAtPos.dataset.blockId : null;
+        const originalIdx = bid !== null ? blockOriginalRound[bid] : undefined;
+
+        // Only compare if this block corresponds to the same original round position
+        if (originalIdx !== ri) continue;
+
+        const oldRound = oldRounds[ri];
+        const newRound = rounds[ri];
+
+        if (coursePropertiesChanged(oldRound, newRound)) {
+          // Check if scores exist for this round
+          const scoresSnap = await get(ref(db, `competitions/${compId}/scores/${ri}`));
+          const roundScores = scoresSnap.val();
+
+          if (roundScores && Object.keys(roundScores).length > 0) {
+            const courseName = newRound.name || `Round ${ri + 1}`;
+            const shouldRecalc = confirm(
+              `Course properties have changed for "${courseName}".\n\nRecalculate all stableford scores with the new course data?\n\nOK = Yes   Cancel = No`
+            );
+
+            if (shouldRecalc) {
+              await recalculateRoundScores(compId, ri, newRound, roundScores, players);
+            }
+          }
+        }
+      }
+    }
+
+    state.comp = compMeta;
+    state.activeCompId = compId;
+    state.isCopying = false;
+    localStorage.setItem('activeCompId', compId);
+    showScreen('screen-comp-menu');
+  } catch (err) {
+    showSetupError('Save failed: ' + err.message);
+  }
 }
 window.saveSetup = saveSetup;
 
@@ -482,20 +661,31 @@ function renderScoreScreen() {
 }
 
 function updateScoreSummary(player, comp, allScores) {
+  // Show stats for the currently selected round only (not overall total)
+  const ri    = state.scoreRound;
+  const round = comp.rounds[ri];
+  const rScores = (allScores[ri] || {})[player.id] || {};
+
   let totalPts = 0, holesPlayed = 0, skinsWon = 0;
-  comp.rounds.forEach((round, ri) => {
-    const rScores   = allScores[ri] || {};
-    const myScores  = rScores[player.id] || {};
-    Object.values(myScores).forEach(hs => {
-      if (hs.gross > 0) { totalPts += hs.points || 0; holesPlayed++; }
-    });
-    calcSkins(round, rScores, comp.players).forEach(s => {
-      if (s.winner === player.id) skinsWon++;
-    });
+  Object.values(rScores).forEach(hs => {
+    if (hs.gross > 0) { totalPts += hs.points || 0; holesPlayed++; }
   });
-  $('score-total-pts').textContent  = totalPts;
+
+  const skins = calcSkins(round, allScores[ri] || {}, comp.players);
+  skins.forEach(s => {
+    if (s.winner === player.id) skinsWon++;
+  });
+
+  $('score-total-pts').textContent    = totalPts;
   $('score-holes-played').textContent = holesPlayed;
-  $('score-skins-won').textContent  = skinsWon;
+  $('score-skins-won').textContent    = skinsWon;
+
+  // Update round label
+  const roundLabelEl = $('score-round-label');
+  if (roundLabelEl) {
+    const roundName = round.name || `Round ${ri + 1}`;
+    roundLabelEl.textContent = roundName;
+  }
 }
 
 function renderHoles(myScores, skins) {
@@ -548,6 +738,14 @@ function openHoleModal(holeIdx, holeData, currentGross, player) {
     : `HCP ${player.handicap}`;
   $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
   updateModalDisplay();
+
+  // Update "Save & Next" button text
+  const isLastHole = holeIdx >= round.holes.length - 1;
+  const saveNextBtn = $('save-next-btn');
+  if (saveNextBtn) {
+    saveNextBtn.textContent = isLastHole ? 'Save & Finish ✅' : 'Save & Next →';
+  }
+
   $('hole-modal').classList.remove('hidden');
 }
 
@@ -591,16 +789,48 @@ function saveHoleScore() {
 }
 window.saveHoleScore = saveHoleScore;
 
+function saveAndNextHole() {
+  const ctx = state.holeModalCtx;
+  if (!ctx) return;
+  const { holeIdx, holeData, player } = ctx;
+  const gross        = modalScore;
+  const round        = state.comp.rounds[state.scoreRound];
+  const effectiveHcp = getEffectiveHandicap(player, round);
+  const points       = calcStableford(gross, holeData.par, holeData.si, effectiveHcp);
+
+  set(ref(db, `${getScorePath()}/${state.scoreRound}/${player.id}/${holeIdx}`), { gross, points })
+    .then(() => {
+      const nextHoleIdx = holeIdx + 1;
+      if (nextHoleIdx >= round.holes.length) {
+        // Last hole — just close
+        closeHoleModal();
+        renderScoreScreen();
+      } else {
+        // Close current modal, then open next hole
+        state.holeModalCtx = null;
+        $('hole-modal').classList.add('hidden');
+
+        // Fetch fresh scores so we can pre-fill existing score for next hole
+        get(ref(db, `${getScorePath()}/${state.scoreRound}/${player.id}`)).then(snap => {
+          const myScores  = snap.val() || {};
+          const nextHs    = myScores[nextHoleIdx] || {};
+          const nextHole  = round.holes[nextHoleIdx];
+          renderScoreScreen();
+          openHoleModal(nextHoleIdx, nextHole, nextHs.gross || nextHole.par, player);
+        });
+      }
+    });
+}
+window.saveAndNextHole = saveAndNextHole;
+
 // =====================================================
 // COURSE HANDICAP CALCULATION
 // =====================================================
 function calcCourseHandicap(handicapIndex, slopeRating, courseRating, coursePar) {
-  // Course Handicap = ROUND(HI × (Slope ÷ 113) + (CourseRating − CoursePar))
   return Math.round(handicapIndex * (slopeRating / 113) + (courseRating - coursePar));
 }
 
 function getEffectiveHandicap(player, round) {
-  // Falls back to raw handicap index if slope_rating not set
   if (!round || !round.slope_rating || round.slope_rating === 0) return player.handicap;
   return calcCourseHandicap(player.handicap, round.slope_rating, round.course_rating || 0, round.course_par || 72);
 }
@@ -617,7 +847,7 @@ function calcShots(handicap, si) {
 function calcStableford(gross, par, si, handicap) {
   const shots = calcShots(handicap, si);
   const net   = gross - shots;
-  const diff  = net - par;   // negative = under par
+  const diff  = net - par;
   if (diff <= -3) return 5;  // albatross
   if (diff === -2) return 4; // eagle
   if (diff === -1) return 3; // birdie
@@ -630,7 +860,6 @@ function calcStableford(gross, par, si, handicap) {
 // SKINS CALCULATION
 // =====================================================
 function calcSkins(round, allRoundScores, players) {
-  // Returns array[18] of { winner: playerId|null, rollover: bool, pot: number }
   const result   = [];
   let rollingPot = 0;
 
@@ -652,7 +881,6 @@ function calcSkins(round, allRoundScores, players) {
       rollingPot = 0;
     } else if (bestPlayers.length > 1) {
       result.push({ winner: null, rollover: true, pot: rollingPot });
-      // pot rolls over — don't reset
     } else {
       result.push({ winner: null, rollover: false, pot: rollingPot });
     }
@@ -667,7 +895,6 @@ function renderLeaderboard() {
   const comp = state.comp;
   if (!comp) return;
 
-  // Build tabs
   const tabsEl = $('lb-round-tabs');
   tabsEl.innerHTML = '';
   const tabs = [
@@ -682,12 +909,10 @@ function renderLeaderboard() {
     tabsEl.appendChild(btn);
   });
 
-  // Live scores
   onValue(ref(db, getScorePath()), snap => {
     const allScores = snap.val() || {};
     const players   = comp.players ? Object.values(comp.players) : [];
 
-    // Skins per round
     const roundSkins = comp.rounds.map((round, ri) =>
       calcSkins(round, allScores[ri] || {}, comp.players)
     );
@@ -697,7 +922,6 @@ function renderLeaderboard() {
       if (s.winner && skinCounts[s.winner] !== undefined) skinCounts[s.winner]++;
     }));
 
-    // Player totals
     const totals = players.map(p => {
       const roundPts = comp.rounds.map((_, ri) => {
         const rScores = (allScores[ri] || {})[p.id] || {};
@@ -707,12 +931,11 @@ function renderLeaderboard() {
         });
         return { pts, holes };
       });
-      const totalPts   = roundPts.reduce((s, r) => s + r.pts, 0);
+      const totalPts    = roundPts.reduce((s, r) => s + r.pts, 0);
       const holesPlayed = roundPts.reduce((s, r) => s + r.holes, 0);
       return { ...p, roundPts, totalPts, holesPlayed, skins: skinCounts[p.id] || 0 };
     });
 
-    // Display subset
     const display = totals.map(t => ({
       ...t,
       displayPts:   state.lbRound === 'overall' ? t.totalPts   : t.roundPts[state.lbRound].pts,
@@ -734,13 +957,12 @@ function renderLbTable(display) {
     const row = document.createElement('div');
     row.className = 'lb-row';
 
-    // Build HCP display — show playing handicap per round when available
     let hcpDisplay;
     if (state.lbRound === 'overall') {
       hcpDisplay = `HCP ${t.handicap}`;
     } else {
-      const round        = state.comp.rounds[state.lbRound];
-      const playingHcp   = getEffectiveHandicap(t, round);
+      const round      = state.comp.rounds[state.lbRound];
+      const playingHcp = getEffectiveHandicap(t, round);
       hcpDisplay = (playingHcp !== t.handicap)
         ? `HCP ${t.handicap} · Playing ${playingHcp}`
         : `HCP ${t.handicap}`;
@@ -809,12 +1031,12 @@ function renderSkinsSummary(comp, roundSkins, allScores) {
 // GOLF COURSE API
 // =====================================================
 
-async function searchCourse(roundIndex) {
-  const query = $(`course-search-${roundIndex}`).value.trim();
+async function searchCourse(blockId) {
+  const query = $(`course-search-${blockId}`).value.trim();
   if (!query) return;
 
-  const resultsEl = $(`course-results-${roundIndex}`);
-  const teeEl     = $(`tee-selector-${roundIndex}`);
+  const resultsEl = $(`course-results-${blockId}`);
+  const teeEl     = $(`tee-selector-${blockId}`);
   teeEl.classList.add('hidden');
   resultsEl.innerHTML = '<p class="course-search-status">Searching…</p>';
   resultsEl.classList.remove('hidden');
@@ -841,7 +1063,7 @@ async function searchCourse(roundIndex) {
         <span class="course-result-name">${escHtml(course.club_name)}</span>
         <span class="course-result-sub">${escHtml(course.course_name || '')}${location ? ' · ' + escHtml(location) : ''}</span>
       `;
-      item.onclick = () => loadCourseDetails(course.id, roundIndex);
+      item.onclick = () => loadCourseDetails(course.id, blockId);
       resultsEl.appendChild(item);
     });
   } catch (err) {
@@ -850,9 +1072,9 @@ async function searchCourse(roundIndex) {
 }
 window.searchCourse = searchCourse;
 
-async function loadCourseDetails(courseId, roundIndex) {
-  const resultsEl = $(`course-results-${roundIndex}`);
-  const teeEl     = $(`tee-selector-${roundIndex}`);
+async function loadCourseDetails(courseId, blockId) {
+  const resultsEl = $(`course-results-${blockId}`);
+  const teeEl     = $(`tee-selector-${blockId}`);
 
   resultsEl.innerHTML = '<p class="course-search-status">Loading course details…</p>';
   teeEl.classList.add('hidden');
@@ -865,11 +1087,9 @@ async function loadCourseDetails(courseId, roundIndex) {
     const data = await res.json();
     const course = data.course;
 
-    // Auto-fill course name
     const fullName = course.club_name + (course.course_name && course.course_name !== course.club_name ? ` — ${course.course_name}` : '');
-    $(`round-name-${roundIndex}`).value = fullName;
+    $(`round-name-${blockId}`).value = fullName;
 
-    // course.tees is an object {male: [...], female: [...]}
     const teesObj  = course.tees || {};
     const maleTees = Array.isArray(teesObj.male) ? teesObj.male : [];
     const femaleTees = Array.isArray(teesObj.female) ? teesObj.female : [];
@@ -884,7 +1104,6 @@ async function loadCourseDetails(courseId, roundIndex) {
       return;
     }
 
-    // Build tee selector
     teeEl.innerHTML = '<p class="tee-selector-label">Select your tee:</p>';
     tees.forEach(tee => {
       const btn = document.createElement('button');
@@ -894,7 +1113,7 @@ async function loadCourseDetails(courseId, roundIndex) {
         <span class="tee-name">${escHtml(tee.tee_name)}</span>
         <span class="tee-details">CR ${tee.course_rating} &middot; Slope ${tee.slope_rating} &middot; Par ${tee.par_total}</span>
       `;
-      btn.onclick = () => applyTeeData(tee, roundIndex);
+      btn.onclick = () => applyTeeData(tee, blockId);
       teeEl.appendChild(btn);
     });
     teeEl.classList.remove('hidden');
@@ -904,25 +1123,22 @@ async function loadCourseDetails(courseId, roundIndex) {
   }
 }
 
-function applyTeeData(tee, roundIndex) {
-  // Fill course rating, slope, par
-  $(`round-course-rating-${roundIndex}`).value = tee.course_rating || '';
-  $(`round-slope-${roundIndex}`).value          = tee.slope_rating  || '';
-  $(`round-course-par-${roundIndex}`).value     = tee.par_total     || '';
+function applyTeeData(tee, blockId) {
+  $(`round-course-rating-${blockId}`).value = tee.course_rating || '';
+  $(`round-slope-${blockId}`).value          = tee.slope_rating  || '';
+  $(`round-course-par-${blockId}`).value     = tee.par_total     || '';
 
-  // Store per-hole data in pendingCourseHoles
   if (tee.holes && tee.holes.length > 0) {
     const holes = tee.holes.slice(0, 18).map((hole, idx) => ({
       par: hole.par || DEFAULT_PARS[idx],
       si:  hole.handicap || (idx + 1),
     }));
-    pendingCourseHoles[roundIndex] = holes;
-    const statusEl = $(`course-status-${roundIndex}`);
+    pendingCourseHoles[blockId] = holes;
+    const statusEl = $(`course-status-${blockId}`);
     if (statusEl) statusEl.textContent = '✅ Holes set (from API)';
   }
 
-  // Confirm selection in the tee selector area
-  const teeEl = $(`tee-selector-${roundIndex}`);
+  const teeEl = $(`tee-selector-${blockId}`);
   teeEl.innerHTML = `<p class="tee-selected-msg">✅ ${escHtml(tee.tee_name)} tee selected — all fields auto-filled!</p>`;
 }
 
