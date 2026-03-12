@@ -53,7 +53,7 @@ function showScreen(id) {
 
   if (id === 'screen-home')         initHome();
   if (id === 'screen-comp-menu')    initCompMenu();
-  if (id === 'screen-admin-setup')  initAdminSetup();
+  if (id === 'screen-admin-setup' && !state.returningFromHoles)  initAdminSetup();
   if (id === 'screen-leaderboard')  renderLeaderboard();
 }
 window.showScreen = showScreen;
@@ -358,8 +358,11 @@ function saveCourseSetup() {
     holes.push({ par, si });
   }
   pendingCourseHoles[state.editingCourse] = holes;
+  // Return to admin setup WITHOUT re-initialising the form
+  state.returningFromHoles = true;
   showScreen('screen-admin-setup');
-  // Update the status label (initAdminSetup re-renders, so just flag in pendingCourseHoles)
+  state.returningFromHoles = false;
+  // Update the status label
   const statusEl = $(`course-status-${state.editingCourse}`);
   if (statusEl) statusEl.textContent = '✅ Holes set';
 }
@@ -866,9 +869,11 @@ async function loadCourseDetails(courseId, roundIndex) {
     const fullName = course.club_name + (course.course_name && course.course_name !== course.club_name ? ` — ${course.course_name}` : '');
     $(`round-name-${roundIndex}`).value = fullName;
 
-    // Filter to male tees (fallback: all tees)
-    const allTees  = course.tees || [];
-    const maleTees = allTees.filter(t => t.tee_type === 'male');
+    // course.tees is an object {male: [...], female: [...]}
+    const teesObj  = course.tees || {};
+    const maleTees = Array.isArray(teesObj.male) ? teesObj.male : [];
+    const femaleTees = Array.isArray(teesObj.female) ? teesObj.female : [];
+    const allTees  = [...maleTees, ...femaleTees];
     const tees     = maleTees.length > 0 ? maleTees : allTees;
 
     resultsEl.classList.add('hidden');
