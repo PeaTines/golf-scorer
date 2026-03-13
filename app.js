@@ -73,6 +73,16 @@ function initHome() {
   const list = $('lobby-list');
   list.innerHTML = '';
 
+  // Show/hide group filter note
+  const urlGroup = new URLSearchParams(window.location.search).get('group') || '';
+  const groupNote = $('lobby-group-note');
+  if (urlGroup.trim()) {
+    groupNote.textContent = `Showing competitions for group: ${urlGroup.trim()}`;
+    groupNote.classList.remove('hidden');
+  } else {
+    groupNote.classList.add('hidden');
+  }
+
   get(ref(db, 'competitions'))
     .then(snap => {
       state.allComps = snap.val() || {};
@@ -90,13 +100,22 @@ function renderLobby() {
   const list = $('lobby-list');
   list.innerHTML = '';
 
-  const comps = Object.entries(state.allComps).map(([id, data]) => ({
+  const urlGroup = (new URLSearchParams(window.location.search).get('group') || '').trim().toLowerCase();
+
+  let comps = Object.entries(state.allComps).map(([id, data]) => ({
     id,
     ...data.meta
   })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+  if (urlGroup) {
+    comps = comps.filter(c => (c.group || '').trim().toLowerCase() === urlGroup);
+  }
+
   if (comps.length === 0) {
-    list.innerHTML = '<p class="info-text">No competitions yet. Create one to get started!</p>';
+    const msg = urlGroup
+      ? `<p class="info-text">No competitions found for group "<strong>${escHtml(urlGroup)}</strong>".</p>`
+      : '<p class="info-text">No competitions yet. Create one to get started!</p>';
+    list.innerHTML = msg;
     return;
   }
 
@@ -150,7 +169,8 @@ function copyCompetition(compId) {
   state.comp = {
     ...meta,
     name: incrementName(meta.name),
-    adminPin: ''
+    adminPin: '',
+    group: meta.group || ''
   };
 
   showScreen('screen-admin-setup');
@@ -348,6 +368,7 @@ function initAdminSetup() {
   $('setup-back-btn').onclick = () => showScreen(isEdit ? 'screen-admin-panel' : 'screen-home');
 
   $('setup-comp-name').value = c ? (c.name || '') : '';
+  $('setup-group').value     = c ? (c.group || '') : '';
   $('setup-admin-pin').value  = c ? (c.adminPin || '') : '';
 
   // Players
@@ -496,8 +517,9 @@ async function recalculateRoundScores(compId, roundIndex, round, roundScores, pl
 // SAVE SETUP
 // =====================================================
 async function saveSetup() {
-  const name = $('setup-comp-name').value.trim();
-  const pin  = $('setup-admin-pin').value.trim();
+  const name  = $('setup-comp-name').value.trim();
+  const group = ($('setup-group').value || '').trim().toLowerCase();
+  const pin   = $('setup-admin-pin').value.trim();
   if (!name) { showSetupError('Please enter a competition name.'); return; }
   if (!pin)  { showSetupError('Please enter an admin PIN.'); return; }
 
@@ -541,7 +563,7 @@ async function saveSetup() {
 
   const isNew = !state.activeCompId || state.isCopying;
 
-  const compMeta = { name, adminPin: pin, players, rounds, updatedAt: Date.now() };
+  const compMeta = { name, adminPin: pin, group, players, rounds, updatedAt: Date.now() };
   if (isNew) {
     compMeta.createdAt = Date.now();
   } else if (state.comp && state.comp.createdAt) {
@@ -739,11 +761,11 @@ function openHoleModal(holeIdx, holeData, currentGross, player) {
   $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
   updateModalDisplay();
 
-  // Update "Save & Next" button text
+  // Update "Next" button text for last hole
   const isLastHole = holeIdx >= round.holes.length - 1;
   const saveNextBtn = $('save-next-btn');
   if (saveNextBtn) {
-    saveNextBtn.textContent = isLastHole ? 'Save & Finish ✅' : 'Save & Next →';
+    saveNextBtn.textContent = isLastHole ? 'Finish ✓' : 'Next →';
   }
 
   $('hole-modal').classList.remove('hidden');

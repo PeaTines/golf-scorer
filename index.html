@@ -15,12 +15,13 @@
   <div class="hero">
     <div class="hero-emoji">⛳</div>
     <h1>Golf Scorer</h1>
-    <p class="subtitle">Multi-Competition Manager</p>
+    <p class="subtitle">Competition Manager</p>
   </div>
   <div class="card">
     <button class="btn btn-primary btn-lg" onclick="createNewCompetition()">🏌️ Create New Competition</button>
     <div class="divider"></div>
     <h3>Competitions</h3>
+    <div id="lobby-group-note" class="lobby-group-note hidden"></div>
     <div id="lobby-loading" class="loading-msg">Loading competitions...</div>
     <div id="lobby-list" class="comp-list">
       <!-- Dynamically added -->
@@ -66,7 +67,10 @@
   <div class="card">
     <label class="label">Competition Name</label>
     <input type="text" id="setup-comp-name" class="input" placeholder="e.g. Marbella Golf 2025">
-    
+
+    <label class="label">Group <span class="label-hint">(optional)</span></label>
+    <input type="text" id="setup-group" class="input" placeholder="e.g. tenerife-golf, work-mates">
+
     <label class="label">Admin PIN (4 digits)</label>
     <input type="number" id="setup-admin-pin" class="input" placeholder="e.g. 1234" maxlength="4" inputmode="numeric">
 
@@ -181,7 +185,7 @@
     <p id="modal-points" class="points-preview"></p>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeHoleModal()">Cancel</button>
-      <button class="btn btn-success" id="save-next-btn" onclick="saveAndNextHole()">Save & Next →</button>
+      <button class="btn btn-success" id="save-next-btn" onclick="saveAndNextHole()">Next →</button>
       <button class="btn btn-success" onclick="saveHoleScore()">Save ✅</button>
     </div>
   </div>
