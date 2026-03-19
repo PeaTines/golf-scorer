@@ -168,7 +168,23 @@
     <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">✏️ Edit Competition Setup</button>
     <button class="btn btn-outline btn-lg" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
     <div class="divider"></div>
-    <button class="btn btn-danger btn-lg" onclick="resetCompetition()">🗑️ Reset Competition</button>
+    <button class="btn btn-danger btn-lg" onclick="showDeleteConfirm()">🗑️ Delete Competition</button>
+  </div>
+</div>
+
+<!-- Delete Competition Confirmation Modal -->
+<div id="delete-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeDeleteModal()"></div>
+  <div class="modal-content">
+    <h3 style="color:var(--red)">⚠️ Delete Competition</h3>
+    <p class="modal-info">Permanently deletes <strong id="delete-comp-name"></strong> and all scores. This cannot be undone.</p>
+    <p class="modal-info">Re-enter the admin PIN to confirm:</p>
+    <input type="number" id="delete-pin-input" class="input-lg" placeholder="PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" onkeydown="if(event.key==='Enter')confirmDelete()">
+    <p id="delete-pin-error" class="error-text hidden">Incorrect PIN — competition not deleted.</p>
+    <div class="modal-actions" style="margin-top:8px">
+      <button class="btn btn-outline" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDelete()">Delete 🗑️</button>
+    </div>
   </div>
 </div>
 

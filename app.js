@@ -267,16 +267,38 @@ function checkAdminPin() {
 }
 window.checkAdminPin = checkAdminPin;
 
-function resetCompetition() {
-  if (!confirm('⚠️ This will delete ALL scores and competition data for this competition. Are you sure?')) return;
+function showDeleteConfirm() {
+  $('delete-comp-name').textContent = state.comp.name;
+  $('delete-pin-input').value = '';
+  $('delete-pin-error').classList.add('hidden');
+  $('delete-modal').classList.remove('hidden');
+  // Small delay so the modal is visible before keyboard appears
+  setTimeout(() => $('delete-pin-input').focus(), 100);
+}
+window.showDeleteConfirm = showDeleteConfirm;
+
+function closeDeleteModal() {
+  $('delete-modal').classList.add('hidden');
+}
+window.closeDeleteModal = closeDeleteModal;
+
+function confirmDelete() {
+  const pin = $('delete-pin-input').value.trim();
+  if (pin !== String(state.comp.adminPin)) {
+    $('delete-pin-error').classList.remove('hidden');
+    $('delete-pin-input').value = '';
+    $('delete-pin-input').focus();
+    return;
+  }
   remove(ref(db, `competitions/${state.activeCompId}`));
+  closeDeleteModal();
   state.comp = null;
   state.activeCompId = null;
   localStorage.removeItem('activeCompId');
   state.isAdmin = false;
   showScreen('screen-home');
 }
-window.resetCompetition = resetCompetition;
+window.confirmDelete = confirmDelete;
 
 // =====================================================
 // ADMIN SETUP — Dynamic Round Blocks
