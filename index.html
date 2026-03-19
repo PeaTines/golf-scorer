@@ -52,7 +52,7 @@
   </div>
   <div class="card">
     <p class="info-text">Enter the admin PIN to manage the competition.</p>
-    <input type="number" id="admin-pin-input" class="input-lg" placeholder="PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric">
+    <input type="number" id="admin-pin-input" class="input-lg" placeholder="PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" onkeydown="if(event.key==='Enter')checkAdminPin()">
     <button class="btn btn-primary btn-lg" onclick="checkAdminPin()">Unlock 🔓</button>
     <p id="admin-pin-error" class="error-text hidden">Wrong PIN. Try again.</p>
   </div>
@@ -164,7 +164,7 @@
     <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <div>
       <h2>🔧 Admin Panel</h2>
-      <div id="admin-panel-comp-name" style="font-size:0.8rem;opacity:0.8;margin-top:2px"></div>
+      <div id="admin-panel-comp-name" style="font-size:1.1rem;font-weight:700;margin-top:2px"></div>
     </div>
   </div>
   <div class="card">

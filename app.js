@@ -299,8 +299,9 @@ function submitPinConfirm() {
     $('pin-confirm-input').focus();
     return;
   }
+  const action = pinConfirmAction; // capture before close() nulls it
   closePinConfirmModal();
-  if (pinConfirmAction) pinConfirmAction();
+  if (action) action();
 }
 window.submitPinConfirm = submitPinConfirm;
 
