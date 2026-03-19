@@ -63,6 +63,10 @@ function showScreen(id) {
   if (id === 'screen-comp-menu')    initCompMenu();
   if (id === 'screen-admin-setup' && !state.returningFromHoles)  initAdminSetup();
   if (id === 'screen-leaderboard')  renderLeaderboard();
+  if (id === 'screen-admin-panel')  {
+    const el = $('admin-panel-comp-name');
+    if (el) el.textContent = state.comp ? state.comp.name : '';
+  }
 }
 window.showScreen = showScreen;
 
