@@ -921,23 +921,6 @@ function switchModalPlayer(player) {
 }
 window.switchModalPlayer = switchModalPlayer;
 
-function findNextUnscoredGroupPlayer() {
-  const ctx = state.holeModalCtx;
-  const players = state.comp.players ? Object.values(state.comp.players) : [];
-  for (const pid of state.scorerGroup) {
-    if (!ctx.scoredInSession.has(pid)) return players.find(p => p.id === pid) || null;
-  }
-  return null;
-}
-
-function getFirstGroupPlayer() {
-  const players = state.comp.players ? Object.values(state.comp.players) : [];
-  for (const pid of state.scorerGroup) {
-    const p = players.find(pl => pl.id === pid);
-    if (p) return p;
-  }
-  return state.currentPlayer;
-}
 
 function updateModalDisplay() {
   $('modal-score').textContent = modalScore;
@@ -981,20 +964,10 @@ function saveHoleScore() {
 
   set(ref(db, `${getScorePath()}/${state.scoreRound}/${player.id}/${holeIdx}`), { gross, points })
     .then(() => {
+      // Mark this player as scored and refresh the pills — scorer picks next player manually
       ctx.groupScores[player.id] = gross;
       ctx.scoredInSession.add(player.id);
-
-      // If group has multiple players, cycle to the next unscored player
-      if (state.scorerGroup.length > 1) {
-        const next = findNextUnscoredGroupPlayer();
-        if (next) {
-          switchModalPlayer(next);
-          return;
-        }
-      }
-      // All players scored (or single player) — close and refresh
-      // shows the last player active in the modal
-      closeHoleModal();
+      renderModalGroupBar();
     });
 }
 window.saveHoleScore = saveHoleScore;
@@ -1012,23 +985,20 @@ function saveAndNextHole() {
     .then(() => {
       const nextHoleIdx = holeIdx + 1;
       if (nextHoleIdx >= round.holes.length) {
-        closeHoleModal(getFirstGroupPlayer());
+        // Last hole — close and show this player's completed scorecard
+        closeHoleModal();
       } else {
         state.holeModalCtx = null;
         $('hole-modal').classList.add('hidden');
 
-        // Always open next hole for the first player in the group
-        const firstPlayer = getFirstGroupPlayer();
-        state.currentPlayer = firstPlayer;
-
-        // Fetch fresh round scores to pre-fill existing scores and update cache
+        // Stay on the same player for the next hole
         get(ref(db, `${getScorePath()}/${state.scoreRound}`)).then(snap => {
           const roundScores = snap.val() || {};
           state.lastRoundScores = roundScores;
-          const nextHs  = (roundScores[firstPlayer.id] || {})[nextHoleIdx] || {};
+          const nextHs  = (roundScores[player.id] || {})[nextHoleIdx] || {};
           const nextHole = round.holes[nextHoleIdx];
           renderScoreScreen();
-          openHoleModal(nextHoleIdx, nextHole, nextHs.gross || nextHole.par, firstPlayer);
+          openHoleModal(nextHoleIdx, nextHole, nextHs.gross || nextHole.par, player);
         });
       }
     });
