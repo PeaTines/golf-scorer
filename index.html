@@ -117,6 +117,7 @@
     <h2 id="score-player-name"></h2>
   </div>
   <div class="round-tabs" id="score-round-tabs"></div>
+  <div id="scorer-group-bar" class="scorer-group-bar hidden"></div>
   <div id="score-hcp-info" class="hcp-info-bar hidden"></div>
   <div id="score-content">
     <div class="card score-summary-card">
@@ -168,6 +169,19 @@
     <button class="btn btn-outline btn-lg" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
     <div class="divider"></div>
     <button class="btn btn-danger btn-lg" onclick="resetCompetition()">🗑️ Reset Competition</button>
+  </div>
+</div>
+
+<!-- Group Editor Modal -->
+<div id="group-editor" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeGroupEditor()"></div>
+  <div class="modal-content">
+    <h3>Scoring for…</h3>
+    <p class="modal-info">Select the players you're entering scores for in this session.</p>
+    <div id="group-editor-players"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-success" onclick="closeGroupEditor()">Done ✅</button>
+    </div>
   </div>
 </div>
 

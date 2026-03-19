@@ -22,6 +22,7 @@ const state = {
   activeCompId: localStorage.getItem('activeCompId') || null,
   comp: null,
   currentPlayer: null,
+  scorerGroup: [],
   lbRound: 'overall',
   scoreRound: 0,
   editingCourse: null,
@@ -228,6 +229,13 @@ function renderCompMenu() {
 function selectPlayer(player) {
   state.currentPlayer = player;
   state.scoreRound = 0;
+
+  // Load saved group and ensure it only contains valid current players
+  const validIds = new Set(Object.keys(state.comp.players || {}));
+  let group = loadScorerGroup().filter(id => validIds.has(id));
+  if (!group.includes(player.id)) group.push(player.id);
+  saveScorerGroup(group);
+
   showScreen('screen-score');
   renderScoreScreen();
 }
@@ -635,6 +643,97 @@ function showSetupError(msg) {
 }
 
 // =====================================================
+// SCORER GROUP (quick player switching)
+// =====================================================
+
+function loadScorerGroup() {
+  try {
+    const saved = localStorage.getItem(`scorerGroup_${state.activeCompId}`);
+    return saved ? JSON.parse(saved) : [];
+  } catch { return []; }
+}
+
+function saveScorerGroup(group) {
+  state.scorerGroup = group;
+  localStorage.setItem(`scorerGroup_${state.activeCompId}`, JSON.stringify(group));
+}
+
+function renderScorerGroupBar() {
+  const bar = $('scorer-group-bar');
+  bar.innerHTML = '';
+
+  const players = state.comp.players ? Object.values(state.comp.players) : [];
+  const groupPlayers = state.scorerGroup
+    .map(id => players.find(p => p.id === id))
+    .filter(Boolean);
+
+  if (groupPlayers.length === 0) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+
+  groupPlayers.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'group-pill' + (p.id === state.currentPlayer.id ? ' active' : '');
+    btn.textContent = p.name.split(' ')[0];
+    btn.onclick = () => switchScorerPlayer(p);
+    bar.appendChild(btn);
+  });
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'group-edit-btn';
+  editBtn.textContent = '✎ Edit';
+  editBtn.onclick = openGroupEditor;
+  bar.appendChild(editBtn);
+}
+
+function switchScorerPlayer(player) {
+  state.currentPlayer = player;
+  renderScoreScreen();
+}
+window.switchScorerPlayer = switchScorerPlayer;
+
+function openGroupEditor() {
+  const container = $('group-editor-players');
+  container.innerHTML = '';
+  const players = state.comp.players ? Object.values(state.comp.players) : [];
+
+  players.forEach(p => {
+    const inGroup = state.scorerGroup.includes(p.id);
+    const isCurrent = p.id === state.currentPlayer.id;
+    const chip = document.createElement('div');
+    chip.className = 'group-player-chip' + (inGroup ? ' selected' : '');
+    chip.innerHTML = `
+      <span>${escHtml(p.name)}<span class="group-chip-hcp"> HCP ${p.handicap}</span></span>
+      <span class="chip-check">${inGroup ? '✅' : '⬜'}</span>
+    `;
+    chip.onclick = () => {
+      const idx = state.scorerGroup.indexOf(p.id);
+      if (idx === -1) {
+        state.scorerGroup.push(p.id);
+        chip.classList.add('selected');
+        chip.querySelector('.chip-check').textContent = '✅';
+      } else {
+        // Can't remove the currently active player or the last remaining player
+        if (isCurrent || state.scorerGroup.length <= 1) return;
+        state.scorerGroup.splice(idx, 1);
+        chip.classList.remove('selected');
+        chip.querySelector('.chip-check').textContent = '⬜';
+      }
+      saveScorerGroup(state.scorerGroup);
+    };
+    container.appendChild(chip);
+  });
+
+  $('group-editor').classList.remove('hidden');
+}
+window.openGroupEditor = openGroupEditor;
+
+function closeGroupEditor() {
+  $('group-editor').classList.add('hidden');
+  renderScorerGroupBar();
+}
+window.closeGroupEditor = closeGroupEditor;
+
+// =====================================================
 // SCORE ENTRY
 // =====================================================
 function getScorePath() {
@@ -647,6 +746,8 @@ function renderScoreScreen() {
   if (!player || !comp) return;
 
   $('score-player-name').textContent = `🏌️ ${player.name}`;
+
+  renderScorerGroupBar();
 
   // Round tabs
   const tabsEl = $('score-round-tabs');
