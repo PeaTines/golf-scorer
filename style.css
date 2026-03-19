@@ -375,6 +375,30 @@ body {
 .skin-roll-cell { background: #ffe0b2; color: #bf360c; }
 .skin-none-cell { background: #f5f5f5; color: #aaa; }
 
+/* ---- Modal group player pills ---- */
+.modal-group-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 4px 0 14px;
+}
+.modal-group-pill {
+  background: #f0f4ee;
+  color: var(--green-dark);
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.modal-group-pill.active { background: var(--green); color: white; border-color: var(--green); }
+.modal-group-pill.scored { opacity: 0.45; }
+.modal-group-pill:active { opacity: 0.75; }
+
 /* ---- MODAL ---- */
 .modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }

@@ -774,9 +774,10 @@ function renderScoreScreen() {
   // Load scores (live)
   onValue(ref(db, getScorePath()), snap => {
     const allScores = snap.val() || {};
-    const myScores  = (allScores[state.scoreRound] || {})[player.id] || {};
+    state.lastRoundScores = allScores[state.scoreRound] || {};
+    const myScores  = (state.lastRoundScores)[player.id] || {};
     const round     = comp.rounds[state.scoreRound];
-    const skins     = calcSkins(round, allScores[state.scoreRound] || {}, comp.players);
+    const skins     = calcSkins(round, state.lastRoundScores, comp.players);
 
     renderHoles(myScores, skins);
     updateScoreSummary(player, comp, allScores, skins);
@@ -796,7 +797,7 @@ function updateScoreSummary(player, comp, allScores) {
 
   const skins = calcSkins(round, allScores[ri] || {}, comp.players);
   skins.forEach(s => {
-    if (s.winner === player.id) skinsWon++;
+    if (s.winner === player.id) skinsWon += s.pot;
   });
 
   $('score-total-pts').textContent    = totalPts;
@@ -850,26 +851,92 @@ function renderHoles(myScores, skins) {
 let modalScore = 4;
 
 function openHoleModal(holeIdx, holeData, currentGross, player) {
-  state.holeModalCtx = { holeIdx, holeData, player };
+  // Pre-populate existing scores for all group players from cached round data
+  const groupScores = {};
+  const roundScores = state.lastRoundScores || {};
+  state.scorerGroup.forEach(pid => {
+    const ps = roundScores[pid];
+    groupScores[pid] = (ps && ps[holeIdx] && ps[holeIdx].gross) ? ps[holeIdx].gross : null;
+  });
+
+  state.holeModalCtx = { holeIdx, holeData, player, groupScores, scoredInSession: new Set() };
   modalScore = currentGross || holeData.par;
-  $('modal-title').textContent = `Hole ${holeIdx + 1}`;
+
+  setModalPlayerDisplay(player, holeIdx, holeData);
+  updateModalDisplay();
+  renderModalGroupBar();
+
+  $('hole-modal').classList.remove('hidden');
+}
+
+// Updates modal title, info line, and Next button label for the given player/hole
+function setModalPlayerDisplay(player, holeIdx, holeData) {
   const round        = state.comp.rounds[state.scoreRound];
   const effectiveHcp = getEffectiveHandicap(player, round);
   const shots        = calcShots(effectiveHcp, holeData.si);
-  const hcpLabel     = (effectiveHcp !== player.handicap)
+  const hcpLabel     = effectiveHcp !== player.handicap
     ? `Playing HCP ${effectiveHcp}`
     : `HCP ${player.handicap}`;
-  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
-  updateModalDisplay();
 
-  // Update "Next" button text for last hole
+  $('modal-title').textContent = state.scorerGroup.length > 1
+    ? `Hole ${holeIdx + 1} — ${player.name.split(' ')[0]}`
+    : `Hole ${holeIdx + 1}`;
+  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
+
   const isLastHole = holeIdx >= round.holes.length - 1;
   const saveNextBtn = $('save-next-btn');
-  if (saveNextBtn) {
-    saveNextBtn.textContent = isLastHole ? 'Finish ✓' : 'Next →';
-  }
+  if (saveNextBtn) saveNextBtn.textContent = isLastHole ? 'Finish ✓' : 'Next →';
+}
 
-  $('hole-modal').classList.remove('hidden');
+function renderModalGroupBar() {
+  const bar = $('modal-group-bar');
+  if (!bar || state.scorerGroup.length <= 1) { bar && bar.classList.add('hidden'); return; }
+
+  bar.classList.remove('hidden');
+  bar.innerHTML = '';
+  const players = state.comp.players ? Object.values(state.comp.players) : [];
+  const ctx = state.holeModalCtx;
+
+  state.scorerGroup.forEach(pid => {
+    const p = players.find(pl => pl.id === pid);
+    if (!p) return;
+    const btn = document.createElement('button');
+    const isCurrent = pid === ctx.player.id;
+    const isScored  = ctx.scoredInSession.has(pid);
+    btn.className = 'modal-group-pill' + (isCurrent ? ' active' : '') + (isScored ? ' scored' : '');
+    btn.textContent = p.name.split(' ')[0];
+    btn.onclick = () => switchModalPlayer(p);
+    bar.appendChild(btn);
+  });
+}
+
+function switchModalPlayer(player) {
+  const ctx = state.holeModalCtx;
+  ctx.player = player;
+  const existing = ctx.groupScores[player.id];
+  modalScore = existing || ctx.holeData.par;
+  setModalPlayerDisplay(player, ctx.holeIdx, ctx.holeData);
+  updateModalDisplay();
+  renderModalGroupBar();
+}
+window.switchModalPlayer = switchModalPlayer;
+
+function findNextUnscoredGroupPlayer() {
+  const ctx = state.holeModalCtx;
+  const players = state.comp.players ? Object.values(state.comp.players) : [];
+  for (const pid of state.scorerGroup) {
+    if (!ctx.scoredInSession.has(pid)) return players.find(p => p.id === pid) || null;
+  }
+  return null;
+}
+
+function getFirstGroupPlayer() {
+  const players = state.comp.players ? Object.values(state.comp.players) : [];
+  for (const pid of state.scorerGroup) {
+    const p = players.find(pl => pl.id === pid);
+    if (p) return p;
+  }
+  return state.currentPlayer;
 }
 
 function updateModalDisplay() {
@@ -908,7 +975,23 @@ function saveHoleScore() {
   const points       = calcStableford(gross, holeData.par, holeData.si, effectiveHcp);
 
   set(ref(db, `${getScorePath()}/${state.scoreRound}/${player.id}/${holeIdx}`), { gross, points })
-    .then(() => { closeHoleModal(); renderScoreScreen(); });
+    .then(() => {
+      ctx.groupScores[player.id] = gross;
+      ctx.scoredInSession.add(player.id);
+
+      // If group has multiple players, cycle to the next unscored player
+      if (state.scorerGroup.length > 1) {
+        const next = findNextUnscoredGroupPlayer();
+        if (next) {
+          switchModalPlayer(next);
+          return;
+        }
+      }
+      // All players scored (or single player) — close and refresh
+      state.currentPlayer = getFirstGroupPlayer();
+      closeHoleModal();
+      renderScoreScreen();
+    });
 }
 window.saveHoleScore = saveHoleScore;
 
@@ -925,21 +1008,25 @@ function saveAndNextHole() {
     .then(() => {
       const nextHoleIdx = holeIdx + 1;
       if (nextHoleIdx >= round.holes.length) {
-        // Last hole — just close
+        state.currentPlayer = getFirstGroupPlayer();
         closeHoleModal();
         renderScoreScreen();
       } else {
-        // Close current modal, then open next hole
         state.holeModalCtx = null;
         $('hole-modal').classList.add('hidden');
 
-        // Fetch fresh scores so we can pre-fill existing score for next hole
-        get(ref(db, `${getScorePath()}/${state.scoreRound}/${player.id}`)).then(snap => {
-          const myScores  = snap.val() || {};
-          const nextHs    = myScores[nextHoleIdx] || {};
-          const nextHole  = round.holes[nextHoleIdx];
+        // Always open next hole for the first player in the group
+        const firstPlayer = getFirstGroupPlayer();
+        state.currentPlayer = firstPlayer;
+
+        // Fetch fresh round scores to pre-fill existing scores and update cache
+        get(ref(db, `${getScorePath()}/${state.scoreRound}`)).then(snap => {
+          const roundScores = snap.val() || {};
+          state.lastRoundScores = roundScores;
+          const nextHs  = (roundScores[firstPlayer.id] || {})[nextHoleIdx] || {};
+          const nextHole = round.holes[nextHoleIdx];
           renderScoreScreen();
-          openHoleModal(nextHoleIdx, nextHole, nextHs.gross || nextHole.par, player);
+          openHoleModal(nextHoleIdx, nextHole, nextHs.gross || nextHole.par, firstPlayer);
         });
       }
     });
@@ -1042,7 +1129,7 @@ function renderLeaderboard() {
     const skinCounts = {};
     players.forEach(p => { skinCounts[p.id] = 0; });
     roundSkins.forEach(skins => skins.forEach(s => {
-      if (s.winner && skinCounts[s.winner] !== undefined) skinCounts[s.winner]++;
+      if (s.winner && skinCounts[s.winner] !== undefined) skinCounts[s.winner] += s.pot;
     }));
 
     const totals = players.map(p => {
