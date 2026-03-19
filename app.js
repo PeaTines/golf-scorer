@@ -267,38 +267,68 @@ function checkAdminPin() {
 }
 window.checkAdminPin = checkAdminPin;
 
-function showDeleteConfirm() {
-  $('delete-comp-name').textContent = state.comp.name;
-  $('delete-pin-input').value = '';
-  $('delete-pin-error').classList.add('hidden');
-  $('delete-modal').classList.remove('hidden');
-  // Small delay so the modal is visible before keyboard appears
-  setTimeout(() => $('delete-pin-input').focus(), 100);
-}
-window.showDeleteConfirm = showDeleteConfirm;
+// Shared PIN confirmation modal — used by Reset Scores and Delete Competition
+let pinConfirmAction = null;
 
-function closeDeleteModal() {
-  $('delete-modal').classList.add('hidden');
+function openPinConfirmModal(title, message, btnLabel, action) {
+  pinConfirmAction = action;
+  $('pin-confirm-title').textContent = title;
+  $('pin-confirm-message').textContent = message;
+  $('pin-confirm-btn').textContent = btnLabel;
+  $('pin-confirm-input').value = '';
+  $('pin-confirm-error').classList.add('hidden');
+  $('pin-confirm-modal').classList.remove('hidden');
+  setTimeout(() => $('pin-confirm-input').focus(), 100);
 }
-window.closeDeleteModal = closeDeleteModal;
 
-function confirmDelete() {
-  const pin = $('delete-pin-input').value.trim();
+function closePinConfirmModal() {
+  $('pin-confirm-modal').classList.add('hidden');
+  pinConfirmAction = null;
+}
+window.closePinConfirmModal = closePinConfirmModal;
+
+function submitPinConfirm() {
+  const pin = $('pin-confirm-input').value.trim();
   if (pin !== String(state.comp.adminPin)) {
-    $('delete-pin-error').classList.remove('hidden');
-    $('delete-pin-input').value = '';
-    $('delete-pin-input').focus();
+    $('pin-confirm-error').classList.remove('hidden');
+    $('pin-confirm-input').value = '';
+    $('pin-confirm-input').focus();
     return;
   }
-  remove(ref(db, `competitions/${state.activeCompId}`));
-  closeDeleteModal();
-  state.comp = null;
-  state.activeCompId = null;
-  localStorage.removeItem('activeCompId');
-  state.isAdmin = false;
-  showScreen('screen-home');
+  closePinConfirmModal();
+  if (pinConfirmAction) pinConfirmAction();
 }
-window.confirmDelete = confirmDelete;
+window.submitPinConfirm = submitPinConfirm;
+
+function showResetScoresConfirm() {
+  openPinConfirmModal(
+    '🔄 Reset Scores',
+    `This will delete all recorded scores for "${state.comp.name}" but keep the competition setup (players, courses, handicaps) intact.`,
+    'Reset Scores 🔄',
+    () => {
+      remove(ref(db, `competitions/${state.activeCompId}/scores`));
+      showScreen('screen-comp-menu');
+    }
+  );
+}
+window.showResetScoresConfirm = showResetScoresConfirm;
+
+function showDeleteConfirm() {
+  openPinConfirmModal(
+    '🗑️ Delete Competition',
+    `Permanently deletes "${state.comp.name}" and all scores. This cannot be undone.`,
+    'Delete Competition 🗑️',
+    () => {
+      remove(ref(db, `competitions/${state.activeCompId}`));
+      state.comp = null;
+      state.activeCompId = null;
+      localStorage.removeItem('activeCompId');
+      state.isAdmin = false;
+      showScreen('screen-home');
+    }
+  );
+}
+window.showDeleteConfirm = showDeleteConfirm;
 
 // =====================================================
 // ADMIN SETUP — Dynamic Round Blocks

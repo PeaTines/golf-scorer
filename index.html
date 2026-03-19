@@ -168,22 +168,23 @@
     <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">✏️ Edit Competition Setup</button>
     <button class="btn btn-outline btn-lg" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
     <div class="divider"></div>
+    <button class="btn btn-danger btn-lg" onclick="showResetScoresConfirm()">🔄 Reset Scores</button>
     <button class="btn btn-danger btn-lg" onclick="showDeleteConfirm()">🗑️ Delete Competition</button>
   </div>
 </div>
 
-<!-- Delete Competition Confirmation Modal -->
-<div id="delete-modal" class="modal hidden">
-  <div class="modal-backdrop" onclick="closeDeleteModal()"></div>
+<!-- PIN Confirmation Modal (shared by Reset Scores and Delete Competition) -->
+<div id="pin-confirm-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closePinConfirmModal()"></div>
   <div class="modal-content">
-    <h3 style="color:var(--red)">⚠️ Delete Competition</h3>
-    <p class="modal-info">Permanently deletes <strong id="delete-comp-name"></strong> and all scores. This cannot be undone.</p>
+    <h3 id="pin-confirm-title" style="color:var(--red)"></h3>
+    <p id="pin-confirm-message" class="modal-info"></p>
     <p class="modal-info">Re-enter the admin PIN to confirm:</p>
-    <input type="number" id="delete-pin-input" class="input-lg" placeholder="PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" onkeydown="if(event.key==='Enter')confirmDelete()">
-    <p id="delete-pin-error" class="error-text hidden">Incorrect PIN — competition not deleted.</p>
+    <input type="number" id="pin-confirm-input" class="input-lg" placeholder="PIN" maxlength="4" pattern="[0-9]*" inputmode="numeric" onkeydown="if(event.key==='Enter')submitPinConfirm()">
+    <p id="pin-confirm-error" class="error-text hidden">Incorrect PIN — no changes made.</p>
     <div class="modal-actions" style="margin-top:8px">
-      <button class="btn btn-outline" onclick="closeDeleteModal()">Cancel</button>
-      <button class="btn btn-danger" onclick="confirmDelete()">Delete 🗑️</button>
+      <button class="btn btn-outline" onclick="closePinConfirmModal()">Cancel</button>
+      <button id="pin-confirm-btn" class="btn btn-danger" onclick="submitPinConfirm()"></button>
     </div>
   </div>
 </div>
