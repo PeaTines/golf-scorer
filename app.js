@@ -324,7 +324,12 @@ function showDeleteConfirm() {
     `Permanently deletes "${state.comp.name}" and all scores. This cannot be undone.`,
     'Delete Competition 🗑️',
     () => {
-      remove(ref(db, `competitions/${state.activeCompId}`));
+      const compId = state.activeCompId;
+      // Delete meta and scores separately to work within existing DB rules
+      Promise.all([
+        remove(ref(db, `competitions/${compId}/meta`)),
+        remove(ref(db, `competitions/${compId}/scores`))
+      ]);
       state.comp = null;
       state.activeCompId = null;
       localStorage.removeItem('activeCompId');
