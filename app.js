@@ -959,9 +959,14 @@ function adjustScore(delta) {
 }
 window.adjustScore = adjustScore;
 
-function closeHoleModal() {
-  $('hole-modal').classList.add('hidden');
+function closeHoleModal(targetPlayer) {
+  // Show the last player active in the modal, or an explicit override (e.g. first group player)
+  state.currentPlayer = targetPlayer
+    || (state.holeModalCtx && state.holeModalCtx.player)
+    || state.currentPlayer;
   state.holeModalCtx = null;
+  $('hole-modal').classList.add('hidden');
+  renderScoreScreen();
 }
 window.closeHoleModal = closeHoleModal;
 
@@ -988,9 +993,8 @@ function saveHoleScore() {
         }
       }
       // All players scored (or single player) — close and refresh
-      state.currentPlayer = getFirstGroupPlayer();
+      // shows the last player active in the modal
       closeHoleModal();
-      renderScoreScreen();
     });
 }
 window.saveHoleScore = saveHoleScore;
@@ -1008,9 +1012,7 @@ function saveAndNextHole() {
     .then(() => {
       const nextHoleIdx = holeIdx + 1;
       if (nextHoleIdx >= round.holes.length) {
-        state.currentPlayer = getFirstGroupPlayer();
-        closeHoleModal();
-        renderScoreScreen();
+        closeHoleModal(getFirstGroupPlayer());
       } else {
         state.holeModalCtx = null;
         $('hole-modal').classList.add('hidden');

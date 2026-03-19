@@ -227,8 +227,8 @@ body {
   border: 2px solid transparent;
 }
 .hole-card:active { background: #f0f4ee; }
-.hole-card.scored { border-color: var(--green-light); }
-.hole-card.skin-won { background: linear-gradient(to right, #fffde7, #fff); border-color: var(--gold); }
+.hole-card.scored { border: 3px solid var(--green); background: #eef6ef; }
+.hole-card.skin-won { background: linear-gradient(to right, #fffde7, #fff8e1); border: 3px solid var(--gold); }
 .hole-num {
   width: 36px;
   height: 36px;
