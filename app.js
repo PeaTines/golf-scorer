@@ -509,14 +509,16 @@ function editCourse(blockId) {
   const list = $('course-holes-list');
   list.innerHTML = '';
   for (let h = 0; h < 18; h++) {
-    const par = existing ? existing[h].par : DEFAULT_PARS[h];
-    const si  = existing ? existing[h].si  : (h + 1);
+    const par   = existing ? existing[h].par   : DEFAULT_PARS[h];
+    const si    = existing ? existing[h].si    : (h + 1);
+    const yards = existing ? (existing[h].yards || '') : '';
     const row = document.createElement('div');
     row.className = 'hole-setup-row';
     row.innerHTML = `
       <span class="hole-label">${h + 1}</span>
-      <input type="number" id="hole-par-${h}" value="${par}" min="3" max="6" inputmode="numeric">
-      <input type="number" id="hole-si-${h}"  value="${si}"  min="1" max="18" inputmode="numeric">
+      <input type="number" id="hole-par-${h}"   value="${par}"   min="3" max="6"   inputmode="numeric">
+      <input type="number" id="hole-si-${h}"    value="${si}"    min="1" max="18"  inputmode="numeric">
+      <input type="number" id="hole-yards-${h}" value="${yards}" min="0" max="700" inputmode="numeric" placeholder="—">
     `;
     list.appendChild(row);
   }
@@ -527,9 +529,10 @@ window.editCourse = editCourse;
 function saveCourseSetup() {
   const holes = [];
   for (let h = 0; h < 18; h++) {
-    const par = parseInt($(`hole-par-${h}`).value) || DEFAULT_PARS[h];
-    const si  = parseInt($(`hole-si-${h}`).value)  || (h + 1);
-    holes.push({ par, si });
+    const par   = parseInt($(`hole-par-${h}`).value)   || DEFAULT_PARS[h];
+    const si    = parseInt($(`hole-si-${h}`).value)    || (h + 1);
+    const yards = parseInt($(`hole-yards-${h}`).value) || 0;
+    holes.push({ par, si, yards });
   }
   pendingCourseHoles[state.editingCourse] = holes;
   // Return to admin setup WITHOUT re-initialising the form
@@ -898,7 +901,7 @@ function renderHoles(myScores, skins) {
     card.innerHTML = `
       <div class="hole-num">${h + 1}</div>
       <div class="hole-info">
-        <div class="hole-par-si">Par ${hole.par} · SI ${hole.si}</div>
+        <div class="hole-par-si">Par ${hole.par} · SI ${hole.si}${hole.yards ? ' · ' + hole.yards + 'y' : ''}</div>
         <div class="hole-gross">${scored ? `Gross: ${hs.gross}` : '<span style="color:var(--text-muted)">Tap to enter score</span>'}${skinBadge}${rollBadge}</div>
       </div>
       <div class="hole-points ${ptsClass}">${pts !== null ? pts + 'pts' : '—'}</div>
@@ -943,7 +946,7 @@ function setModalPlayerDisplay(player, holeIdx, holeData) {
   $('modal-title').textContent = state.scorerGroup.length > 1
     ? `Hole ${holeIdx + 1} — ${player.name.split(' ')[0]}`
     : `Hole ${holeIdx + 1}`;
-  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
+  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si}${holeData.yards ? ' · ' + holeData.yards + 'y' : ''} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
 
   const isLastHole = holeIdx >= round.holes.length - 1;
   const saveNextBtn = $('save-next-btn');
@@ -974,12 +977,25 @@ function renderModalGroupBar() {
 
 function switchModalPlayer(player) {
   const ctx = state.holeModalCtx;
-  ctx.player = player;
-  const existing = ctx.groupScores[player.id];
-  modalScore = existing || ctx.holeData.par;
-  setModalPlayerDisplay(player, ctx.holeIdx, ctx.holeData);
-  updateModalDisplay();
-  renderModalGroupBar();
+  const prevPlayer = ctx.player;
+  const gross      = modalScore;
+  const round      = state.comp.rounds[state.scoreRound];
+  const effectiveHcp = getEffectiveHandicap(prevPlayer, round);
+  const points     = calcStableford(gross, ctx.holeData.par, ctx.holeData.si, effectiveHcp);
+
+  // Auto-save the current player's score before switching
+  set(ref(db, `${getScorePath()}/${state.scoreRound}/${prevPlayer.id}/${ctx.holeIdx}`), { gross, points })
+    .then(() => {
+      ctx.groupScores[prevPlayer.id] = gross;
+      ctx.scoredInSession.add(prevPlayer.id);
+
+      ctx.player = player;
+      const existing = ctx.groupScores[player.id];
+      modalScore = existing || ctx.holeData.par;
+      setModalPlayerDisplay(player, ctx.holeIdx, ctx.holeData);
+      updateModalDisplay();
+      renderModalGroupBar();
+    });
 }
 window.switchModalPlayer = switchModalPlayer;
 
@@ -1374,8 +1390,9 @@ function applyTeeData(tee, blockId) {
 
   if (tee.holes && tee.holes.length > 0) {
     const holes = tee.holes.slice(0, 18).map((hole, idx) => ({
-      par: hole.par || DEFAULT_PARS[idx],
-      si:  hole.handicap || (idx + 1),
+      par:   hole.par      || DEFAULT_PARS[idx],
+      si:    hole.handicap || (idx + 1),
+      yards: hole.yardage  || hole.yards || 0,
     }));
     pendingCourseHoles[blockId] = holes;
     const statusEl = $(`course-status-${blockId}`);
