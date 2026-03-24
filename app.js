@@ -914,6 +914,7 @@ function renderHoles(myScores, skins) {
 // HOLE MODAL
 // =====================================================
 let modalScore = 4;
+let modalScoreModified = false;
 
 function openHoleModal(holeIdx, holeData, currentGross, player) {
   // Pre-populate existing scores for all group players from cached round data
@@ -926,6 +927,7 @@ function openHoleModal(holeIdx, holeData, currentGross, player) {
 
   state.holeModalCtx = { holeIdx, holeData, player, groupScores, scoredInSession: new Set() };
   modalScore = currentGross || holeData.par;
+  modalScoreModified = false;
 
   setModalPlayerDisplay(player, holeIdx, holeData);
   updateModalDisplay();
@@ -978,24 +980,32 @@ function renderModalGroupBar() {
 function switchModalPlayer(player) {
   const ctx = state.holeModalCtx;
   const prevPlayer = ctx.player;
-  const gross      = modalScore;
-  const round      = state.comp.rounds[state.scoreRound];
-  const effectiveHcp = getEffectiveHandicap(prevPlayer, round);
-  const points     = calcStableford(gross, ctx.holeData.par, ctx.holeData.si, effectiveHcp);
 
-  // Auto-save the current player's score before switching
-  set(ref(db, `${getScorePath()}/${state.scoreRound}/${prevPlayer.id}/${ctx.holeIdx}`), { gross, points })
-    .then(() => {
-      ctx.groupScores[prevPlayer.id] = gross;
-      ctx.scoredInSession.add(prevPlayer.id);
+  const doSwitch = () => {
+    ctx.player = player;
+    const existing = ctx.groupScores[player.id];
+    modalScore = existing || ctx.holeData.par;
+    modalScoreModified = false;
+    setModalPlayerDisplay(player, ctx.holeIdx, ctx.holeData);
+    updateModalDisplay();
+    renderModalGroupBar();
+  };
 
-      ctx.player = player;
-      const existing = ctx.groupScores[player.id];
-      modalScore = existing || ctx.holeData.par;
-      setModalPlayerDisplay(player, ctx.holeIdx, ctx.holeData);
-      updateModalDisplay();
-      renderModalGroupBar();
-    });
+  if (modalScoreModified) {
+    // Score was adjusted — save before switching
+    const gross        = modalScore;
+    const round        = state.comp.rounds[state.scoreRound];
+    const effectiveHcp = getEffectiveHandicap(prevPlayer, round);
+    const points       = calcStableford(gross, ctx.holeData.par, ctx.holeData.si, effectiveHcp);
+    set(ref(db, `${getScorePath()}/${state.scoreRound}/${prevPlayer.id}/${ctx.holeIdx}`), { gross, points })
+      .then(() => {
+        ctx.groupScores[prevPlayer.id] = gross;
+        ctx.scoredInSession.add(prevPlayer.id);
+        doSwitch();
+      });
+  } else {
+    doSwitch();
+  }
 }
 window.switchModalPlayer = switchModalPlayer;
 
@@ -1016,6 +1026,7 @@ function updateModalDisplay() {
 
 function adjustScore(delta) {
   modalScore = Math.max(1, Math.min(15, modalScore + delta));
+  modalScoreModified = true;
   updateModalDisplay();
 }
 window.adjustScore = adjustScore;
