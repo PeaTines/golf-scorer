@@ -483,7 +483,7 @@ function addPlayerRow(name = '', hcp = '') {
   row.className = 'player-row';
   row.innerHTML = `
     <input type="text" class="input player-name-input" placeholder="Player ${idx}" value="${escHtml(name)}">
-    <input type="number" class="input-sm player-hcp-input" placeholder="HCP" min="0" max="54" value="${hcp}" inputmode="numeric">
+    <input type="number" class="input-sm player-hcp-input" placeholder="HCP" min="0" max="54" step="0.1" value="${hcp}" inputmode="decimal">
     <button class="btn-remove" onclick="this.parentElement.remove()">✕</button>
   `;
   div.appendChild(row);
@@ -600,7 +600,7 @@ async function saveSetup() {
   nameInputs.forEach((inp, i) => {
     const n = inp.value.trim();
     if (n) {
-      const hcp = parseInt(hcpInputs[i].value) || 0;
+      const hcp = parseFloat(hcpInputs[i].value) || 0;
       const id  = `player_${i}`;
       players[id] = { id, name: n, handicap: hcp };
     }
@@ -1075,7 +1075,7 @@ function calcCourseHandicap(handicapIndex, slopeRating, courseRating, coursePar)
 }
 
 function getEffectiveHandicap(player, round) {
-  if (!round || !round.slope_rating || round.slope_rating === 0) return player.handicap;
+  if (!round || !round.slope_rating || round.slope_rating === 0) return Math.round(player.handicap);
   return calcCourseHandicap(player.handicap, round.slope_rating, round.course_rating || 0, round.course_par || 72);
 }
 
