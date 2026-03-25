@@ -901,7 +901,7 @@ function renderHoles(myScores, skins) {
     card.innerHTML = `
       <div class="hole-num">${h + 1}</div>
       <div class="hole-info">
-        <div class="hole-par-si">Par ${hole.par} · SI ${hole.si}${hole.yards ? ' · ' + hole.yards + 'y' : ''}</div>
+        <div class="hole-par-si">Par ${hole.par} · SI ${hole.si}${hole.yards ? ' · ' + hole.yards + ' yds' : ''}</div>
         <div class="hole-gross">${scored ? `Gross: ${hs.gross}` : '<span style="color:var(--text-muted)">Tap to enter score</span>'}${skinBadge}${rollBadge}</div>
       </div>
       <div class="hole-points ${ptsClass}">${pts !== null ? pts + 'pts' : '—'}</div>
@@ -948,7 +948,8 @@ function setModalPlayerDisplay(player, holeIdx, holeData) {
   $('modal-title').textContent = state.scorerGroup.length > 1
     ? `Hole ${holeIdx + 1} — ${player.name.split(' ')[0]}`
     : `Hole ${holeIdx + 1}`;
-  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si}${holeData.yards ? ' · ' + holeData.yards + 'y' : ''} · ${hcpLabel} · You get ${shots} shot${shots !== 1 ? 's' : ''}`;
+  const firstName = player.name.split(' ')[0];
+  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si}${holeData.yards ? ' · ' + holeData.yards + ' yds' : ''} · ${hcpLabel} · ${firstName} gets ${shots} shot${shots !== 1 ? 's' : ''}`;
 
   const isLastHole = holeIdx >= round.holes.length - 1;
   const saveNextBtn = $('save-next-btn');
