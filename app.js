@@ -941,15 +941,12 @@ function setModalPlayerDisplay(player, holeIdx, holeData) {
   const round        = state.comp.rounds[state.scoreRound];
   const effectiveHcp = getEffectiveHandicap(player, round);
   const shots        = calcShots(effectiveHcp, holeData.si);
-  const hcpLabel     = effectiveHcp !== player.handicap
-    ? `Playing HCP ${effectiveHcp}`
-    : `HCP ${player.handicap}`;
+  const shotsStr = `${shots > 0 ? '+' : ''}${shots} shot${shots !== 1 ? 's' : ''}`;
 
   $('modal-title').textContent = state.scorerGroup.length > 1
     ? `Hole ${holeIdx + 1} — ${player.name.split(' ')[0]}`
     : `Hole ${holeIdx + 1}`;
-  const firstName = player.name.split(' ')[0];
-  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si}${holeData.yards ? ' · ' + holeData.yards + ' yds' : ''} · ${hcpLabel} · ${firstName} gets ${shots} shot${shots !== 1 ? 's' : ''}`;
+  $('modal-info').textContent = `Par ${holeData.par} · SI ${holeData.si}${holeData.yards ? ' · ' + holeData.yards + ' yds' : ''} · PlayHCP ${effectiveHcp} = ${shotsStr}`;
 
   const isLastHole = holeIdx >= round.holes.length - 1;
   const saveNextBtn = $('save-next-btn');
