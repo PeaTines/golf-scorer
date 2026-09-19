@@ -4,7 +4,7 @@
 
 // --- Firebase Setup (ES Module imports) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, remove } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+import { getDatabase, ref, set, get, onValue, remove, update } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
@@ -25,6 +25,8 @@ const state = {
   scorerGroup: [],
   lbRound: 'overall',
   scoreRound: 0,
+  gridRound: 0,
+  gridReturnScreen: 'screen-comp-menu',
   editingCourse: null,
   isAdmin: false,
   holeModalCtx: null,
@@ -59,10 +61,15 @@ function showScreen(id) {
   el.classList.add('active');
   window.scrollTo(0, 0);
 
+  // Widen the app container for the spreadsheet-style grid screen
+  // (designed for laptops/tablets, not the mobile-first 480px layout)
+  document.body.classList.toggle('wide-screen', id === 'screen-grid');
+
   if (id === 'screen-home')         initHome();
   if (id === 'screen-comp-menu')    initCompMenu();
   if (id === 'screen-admin-setup' && !state.returningFromHoles)  initAdminSetup();
   if (id === 'screen-leaderboard')  renderLeaderboard();
+  if (id === 'screen-grid')         initGrid();
   if (id === 'screen-admin-panel')  {
     const el = $('admin-panel-comp-name');
     if (el) el.textContent = state.comp ? state.comp.name : '';
@@ -440,6 +447,7 @@ function initAdminSetup() {
   $('setup-comp-name').value = c ? (c.name || '') : '';
   $('setup-group').value     = c ? (c.group || '') : '';
   $('setup-admin-pin').value  = c ? (c.adminPin || '') : '';
+  $('setup-skins-rollover').checked = c ? (c.skinsRollover !== false) : true;
 
   // Players
   const playersList = $('players-list');
@@ -634,9 +642,11 @@ async function saveSetup() {
     rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
   });
 
+  const skinsRollover = $('setup-skins-rollover').checked;
+
   const isNew = !state.activeCompId || state.isCopying;
 
-  const compMeta = { name, adminPin: pin, group, players, rounds, updatedAt: Date.now() };
+  const compMeta = { name, adminPin: pin, group, players, rounds, skinsRollover, updatedAt: Date.now() };
   if (isNew) {
     compMeta.createdAt = Date.now();
   } else if (state.comp && state.comp.createdAt) {
@@ -842,7 +852,7 @@ function renderScoreScreen() {
     state.lastRoundScores = allScores[state.scoreRound] || {};
     const myScores  = (state.lastRoundScores)[player.id] || {};
     const round     = comp.rounds[state.scoreRound];
-    const skins     = calcSkins(round, state.lastRoundScores, comp.players);
+    const skins     = calcSkins(round, state.lastRoundScores, comp.players, comp.skinsRollover !== false);
 
     renderHoles(myScores, skins);
     updateScoreSummary(player, comp, allScores, skins);
@@ -860,7 +870,7 @@ function updateScoreSummary(player, comp, allScores) {
     if (hs.gross > 0) { totalPts += hs.points || 0; holesPlayed++; }
   });
 
-  const skins = calcSkins(round, allScores[ri] || {}, comp.players);
+  const skins = calcSkins(round, allScores[ri] || {}, comp.players, comp.skinsRollover !== false);
   skins.forEach(s => {
     if (s.winner === player.id) skinsWon += s.pot;
   });
@@ -1128,12 +1138,17 @@ function calcStableford(gross, par, si, handicap) {
 // =====================================================
 // SKINS CALCULATION
 // =====================================================
-function calcSkins(round, allRoundScores, players) {
+// rolloverEnabled=true  (default): classic behaviour — tied/unplayed holes roll
+//   their pot forward to the next hole (e.g. 2 skins, 3 skins, etc.)
+// rolloverEnabled=false: no rollover — every hole is worth exactly 1 skin.
+//   If a hole is tied, that skin is simply lost (not carried forward); the
+//   next hole still only offers 1 skin to its outright winner.
+function calcSkins(round, allRoundScores, players, rolloverEnabled = true) {
   const result   = [];
   let rollingPot = 0;
 
   for (let h = 0; h < 18; h++) {
-    rollingPot++;
+    rollingPot = rolloverEnabled ? (rollingPot + 1) : 1;
     let bestPts     = -1;
     let bestPlayers = [];
 
@@ -1149,13 +1164,146 @@ function calcSkins(round, allRoundScores, players) {
       result.push({ winner: bestPlayers[0], rollover: false, pot: rollingPot });
       rollingPot = 0;
     } else if (bestPlayers.length > 1) {
-      result.push({ winner: null, rollover: true, pot: rollingPot });
+      result.push({ winner: null, rollover: rolloverEnabled, pot: rollingPot });
     } else {
       result.push({ winner: null, rollover: false, pot: rollingPot });
     }
   }
   return result;
 }
+
+// =====================================================
+// SPREADSHEET-STYLE SCORE GRID (Laptop / Tablet entry)
+// =====================================================
+// Entry point: called from the Competition Menu or Admin Panel via
+// openGridScreen(returnScreen). Exit: exitGrid() saves and returns to
+// whichever screen the user came from.
+function openGridScreen(returnScreen) {
+  state.gridReturnScreen = returnScreen || 'screen-comp-menu';
+  showScreen('screen-grid');
+}
+window.openGridScreen = openGridScreen;
+
+function initGrid() {
+  if (!state.comp) { showScreen('screen-home'); return; }
+  const nameEl = $('grid-comp-name');
+  if (nameEl) nameEl.textContent = state.comp.name;
+  renderGridRoundTabs();
+  loadGridRound(state.gridRound || 0);
+}
+
+function renderGridRoundTabs() {
+  const tabsEl = $('grid-round-tabs');
+  if (!tabsEl) return;
+  tabsEl.innerHTML = '';
+  state.comp.rounds.forEach((r, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (i === state.gridRound ? ' active' : '');
+    btn.textContent = r.name || `Round ${i + 1}`;
+    btn.onclick = () => switchGridRound(i);
+    tabsEl.appendChild(btn);
+  });
+}
+
+function switchGridRound(newIdx) {
+  if (newIdx === state.gridRound) return;
+  // Save the round we're leaving before switching courses
+  saveGridScores(false).then(() => {
+    state.gridRound = newIdx;
+    renderGridRoundTabs();
+    loadGridRound(newIdx);
+  });
+}
+window.switchGridRound = switchGridRound;
+
+function loadGridRound(ri) {
+  state.gridRound = ri;
+  get(ref(db, getScorePath())).then(snap => {
+    const allScores = snap.val() || {};
+    state.gridScores = allScores[ri] || {};
+    renderGridTable(ri);
+  });
+}
+
+function renderGridTable(ri) {
+  const round   = state.comp.rounds[ri];
+  const players = state.comp.players ? Object.values(state.comp.players) : [];
+  const table   = $('grid-table');
+  if (!table) return;
+
+  let headerHtml = '<thead><tr><th class="grid-player-col">Player</th>';
+  for (let h = 0; h < 18; h++) {
+    const hole = round.holes[h] || { par: '' };
+    headerHtml += `<th>${h + 1}<span class="grid-par">Par ${hole.par}</span></th>`;
+  }
+  headerHtml += '<th>Total</th></tr></thead>';
+
+  let bodyHtml = '<tbody>';
+  players.forEach(p => {
+    const pScores = (state.gridScores && state.gridScores[p.id]) || {};
+    let total = 0;
+    bodyHtml += `<tr><td class="grid-player-col">${escHtml(p.name)}<span class="grid-hcp">HCP ${p.handicap}</span></td>`;
+    for (let h = 0; h < 18; h++) {
+      const hs  = pScores[h] || {};
+      const val = hs.gross > 0 ? hs.gross : '';
+      if (hs.gross > 0) total += hs.points || 0;
+      bodyHtml += `<td><input type="number" class="grid-input" min="1" max="15" inputmode="numeric" data-player="${p.id}" data-hole="${h}" value="${val}"></td>`;
+    }
+    bodyHtml += `<td class="grid-total">${total}</td></tr>`;
+  });
+  bodyHtml += '</tbody>';
+
+  table.innerHTML = headerHtml + bodyHtml;
+}
+
+// Reads every input in the grid table, recalculates Stableford points, and
+// writes them all to Firebase in a single multi-path update() call.
+function saveGridScores(showFeedback) {
+  const round  = state.comp.rounds[state.gridRound];
+  const inputs = document.querySelectorAll('#grid-table .grid-input');
+  const updates = {};
+
+  inputs.forEach(inp => {
+    const pid    = inp.dataset.player;
+    const h      = parseInt(inp.dataset.hole);
+    const gross  = parseInt(inp.value) || 0;
+    const player = state.comp.players[pid];
+    if (!player) return;
+
+    const path = `competitions/${state.activeCompId}/scores/${state.gridRound}/${pid}/${h}`;
+    if (gross > 0) {
+      const effectiveHcp = getEffectiveHandicap(player, round);
+      const hole   = round.holes[h];
+      const points = calcStableford(gross, hole.par, hole.si, effectiveHcp);
+      updates[path] = { gross, points };
+    } else {
+      updates[path] = null; // clear empty cells
+    }
+  });
+
+  return update(ref(db), updates).then(() => {
+    if (showFeedback) {
+      const btn = document.querySelector('.grid-save-btn');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = '✅ Saved!';
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      }
+    }
+    // Refresh totals from the values we just saved
+    loadGridRound(state.gridRound);
+  });
+}
+window.saveGridScores = saveGridScores;
+
+// Saves whatever is on screen, then returns to the screen the grid was
+// opened from (Competition Menu or Admin Panel).
+function exitGrid() {
+  saveGridScores(false).then(() => {
+    showScreen(state.gridReturnScreen || 'screen-comp-menu');
+  });
+}
+window.exitGrid = exitGrid;
 
 // =====================================================
 // LEADERBOARD
@@ -1183,7 +1331,7 @@ function renderLeaderboard() {
     const players   = comp.players ? Object.values(comp.players) : [];
 
     const roundSkins = comp.rounds.map((round, ri) =>
-      calcSkins(round, allScores[ri] || {}, comp.players)
+      calcSkins(round, allScores[ri] || {}, comp.players, comp.skinsRollover !== false)
     );
     const skinCounts = {};
     players.forEach(p => { skinCounts[p.id] = 0; });

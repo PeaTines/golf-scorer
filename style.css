@@ -697,3 +697,126 @@ body {
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   margin-bottom: 14px;
 }
+
+/* ---- Checkbox row (e.g. Skins Rollover toggle) ---- */
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.checkbox-row input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  accent-color: var(--green);
+  cursor: pointer;
+  margin-top: 1px;
+}
+.checkbox-row .label-hint { display: block; font-weight: 400; margin-top: 2px; }
+
+/* =============================================
+   WIDE-SCREEN SPREADSHEET GRID (laptop/tablet)
+   ============================================= */
+
+/* When the grid screen is active, widen the app container beyond the
+   480px mobile-first layout so the full 18-hole spreadsheet fits. */
+body.wide-screen {
+  max-width: 100%;
+}
+body.wide-screen .screen {
+  max-width: 100%;
+}
+
+.grid-save-btn {
+  background: var(--gold);
+  color: var(--green-dark);
+  border: none;
+  border-radius: 20px;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: auto;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.grid-save-btn:active { background: var(--gold-light); }
+
+.grid-wrapper {
+  padding: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.grid-table {
+  border-collapse: collapse;
+  background: var(--card-bg);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  width: 100%;
+  min-width: 900px;
+}
+.grid-table th, .grid-table td {
+  border: 1px solid var(--border);
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 0.85rem;
+}
+.grid-table thead th {
+  background: var(--green-dark);
+  color: white;
+  font-weight: 700;
+  padding: 10px 4px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.grid-par {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.grid-player-col {
+  text-align: left;
+  min-width: 140px;
+  padding: 8px 12px !important;
+  background: #f4f6f0;
+  font-weight: 700;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+thead .grid-player-col {
+  z-index: 3;
+  background: var(--green-dark);
+}
+.grid-hcp {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.grid-input {
+  width: 42px;
+  padding: 6px 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.95rem;
+  -moz-appearance: textfield;
+}
+.grid-input:focus { border-color: var(--green); outline: none; background: #f0f7f0; }
+.grid-total {
+  font-weight: 800;
+  color: var(--green);
+  background: #f4f6f0;
+  font-size: 1rem;
+}
+
+

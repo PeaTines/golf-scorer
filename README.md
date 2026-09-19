@@ -148,8 +148,19 @@ Players can now visit the URL, tap their name, and start entering scores!
 ### Skins
 - Each hole is worth 1 skin
 - The player with the **most Stableford points** on a hole wins the skin
-- If two or more players tie → the skin **rolls over** to the next hole
+- If two or more players tie → the behaviour depends on the **Skins Rollover** setting in Competition Setup:
+  - **Rollover ON (default)** → the skin rolls over to the next hole, stacking up (2 skins, 3 skins, etc.) until someone wins outright
+  - **Rollover OFF** → the tied skin is simply lost; the next hole is still only worth 1 skin
 - The leaderboard shows exactly who's won which holes
+
+### Grid Score Entry (Laptop / Tablet)
+For scoring at a laptop or tablet (e.g. in the clubhouse, or one person entering everyone's scores at once), there's a spreadsheet-style entry screen:
+- From the **Competition Menu** or **Admin Panel**, tap **🖥️ Grid Score Entry**
+- See every player (rows) and all 18 holes (columns) for the selected course at once
+- Switch courses using the tabs at the top — your entries are saved automatically when you switch
+- Tap **💾 Save** any time to save without leaving the screen
+- Tap **✕ Exit** to save and return to where you came from
+
 
 ### Leaderboard
 - Tap **📊 View Leaderboard** from the home screen

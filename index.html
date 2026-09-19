@@ -40,9 +40,11 @@
     <div id="menu-player-list" class="player-grid"></div>
     <div class="divider"></div>
     <button class="btn btn-outline btn-sm" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+    <button class="btn btn-outline btn-sm" onclick="openGridScreen('screen-comp-menu')">🖥️ Grid Score Entry</button>
     <button class="btn btn-outline btn-sm" onclick="showAdminLogin()">🔧 Admin</button>
   </div>
 </div>
+
 
 <!-- Admin Login -->
 <div id="screen-admin-login" class="screen hidden">
@@ -73,6 +75,11 @@
 
     <label class="label">Admin PIN (4 digits)</label>
     <input type="number" id="setup-admin-pin" class="input" placeholder="e.g. 1234" maxlength="4" inputmode="numeric">
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="setup-skins-rollover" checked>
+      <span>Skins Rollover <span class="label-hint">(if unchecked, a tied hole's skin is simply lost — no rollover to the next hole)</span></span>
+    </label>
 
     <div class="divider"></div>
     <h3>Players (up to 8)</h3>
@@ -170,6 +177,7 @@
   <div class="card">
     <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">✏️ Edit Competition Setup</button>
     <button class="btn btn-outline btn-lg" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+    <button class="btn btn-outline btn-lg" onclick="openGridScreen('screen-admin-panel')">🖥️ Grid Score Entry (Tablet/Laptop)</button>
     <div class="divider"></div>
     <button class="btn btn-danger btn-lg" onclick="showResetScoresConfirm()">🔄 Reset Scores</button>
     <button class="btn btn-danger btn-lg" onclick="showDeleteConfirm()">🗑️ Delete Competition</button>
@@ -223,6 +231,19 @@
       <button class="btn btn-success" onclick="saveHoleScore()">Save ✅</button>
       <button class="btn btn-success" id="save-next-btn" onclick="saveAndNextHole()">Next →</button>
     </div>
+  </div>
+</div>
+
+<!-- Spreadsheet-style Score Grid — designed for laptops/tablets -->
+<div id="screen-grid" class="screen hidden">
+  <div class="screen-header">
+    <button class="btn-back" onclick="exitGrid()">✕ Exit</button>
+    <h2 id="grid-comp-name">Score Grid</h2>
+    <button class="grid-save-btn" onclick="saveGridScores(true)">💾 Save</button>
+  </div>
+  <div class="round-tabs" id="grid-round-tabs"></div>
+  <div class="grid-wrapper">
+    <table class="grid-table" id="grid-table"></table>
   </div>
 </div>
 
