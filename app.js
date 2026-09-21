@@ -1234,42 +1234,54 @@ function renderGridTable(ri) {
   let headerHtml = '<thead><tr><th class="grid-player-col">Player</th>';
   for (let h = 0; h < 18; h++) {
     const hole = round.holes[h] || { par: '' };
-    headerHtml += `<th>${h + 1}<span class="grid-par">Par ${hole.par}</span></th>`;
+    headerHtml += `<th>${h + 1}<span class="grid-par">Par ${hole.par}</span>${hole.yards ? `<span class="grid-yards">${hole.yards} yds</span>` : ''}</th>`;
   }
   headerHtml += '<th>Total</th></tr></thead>';
 
   let bodyHtml = '<tbody>';
   players.forEach(p => {
-    const pScores = (state.gridScores && state.gridScores[p.id]) || {};
-    let totalPts = 0, totalGross = 0;
-    bodyHtml += `<tr data-player-row="${p.id}"><td class="grid-player-col">${escHtml(p.name)}<span class="grid-hcp">HCP ${p.handicap}</span></td>`;
+    const pScores       = (state.gridScores && state.gridScores[p.id]) || {};
+    const effectiveHcp  = getEffectiveHandicap(p, round);
+    const hcpLine = (effectiveHcp !== Math.round(p.handicap))
+      ? `HCP ${p.handicap}<span class="grid-playing-hcp">Playing ${effectiveHcp}</span>`
+      : `HCP ${p.handicap}`;
+    bodyHtml += `<tr data-player-row="${p.id}"><td class="grid-player-col">${escHtml(p.name)}<span class="grid-hcp">${hcpLine}</span></td>`;
     for (let h = 0; h < 18; h++) {
       const hs    = pScores[h] || {};
       const gross = hs.gross > 0 ? hs.gross : '';
-      const pts   = hs.gross > 0 ? computeGridPoints(p, round, h, hs.gross) : null;
-      if (hs.gross > 0) { totalPts += pts || 0; totalGross += hs.gross; }
       bodyHtml += `<td>
         <input type="number" class="grid-input" min="1" max="15" inputmode="numeric" data-player="${p.id}" data-hole="${h}" value="${gross}">
-        <span class="grid-pts">${pts !== null ? pts + 'pt' : ''}</span>
+        <span class="grid-pts"></span>
       </td>`;
     }
-    bodyHtml += `<td class="grid-total">${totalPts}<span class="grid-total-sub">${totalGross || 0} shots</span></td></tr>`;
+    // Total cell order matches the per-hole cells: Gross score on top,
+    // Stableford points below, skins count (if any) below that.
+    bodyHtml += `<td class="grid-total">
+      <span class="grid-total-gross">0</span>
+      <span class="grid-total-sub">0 Points</span>
+      <span class="grid-total-skins"></span>
+    </td></tr>`;
   });
   bodyHtml += '</tbody>';
 
   table.innerHTML = headerHtml + bodyHtml;
 
-  // Live-update Stableford points + totals as the user types, without
-  // needing to save first. Assigning via .oninput (not addEventListener)
-  // avoids stacking duplicate handlers across re-renders of this table.
+  // Live-update Stableford points, totals, and skins as the user types,
+  // without needing to save first. Assigning via .oninput (not
+  // addEventListener) avoids stacking duplicate handlers on re-render.
   table.oninput = (e) => {
     if (!e.target.classList.contains('grid-input')) return;
-    handleGridInputChange(e.target, round);
+    refreshGridComputedUI(round);
   };
+
+  // Populate points/totals/skins immediately using whatever values were
+  // just loaded from Firebase (or left blank for a fresh round).
+  refreshGridComputedUI(round);
 }
 
 // Calculates the Stableford points for a single hole entry, or null if no
-// score has been entered yet.
+// score has been entered yet. Uses the player's course-adjusted Playing
+// Handicap for this round (not their raw handicap index).
 function computeGridPoints(player, round, holeIdx, gross) {
   if (!gross || gross <= 0) return null;
   const hole = round.holes[holeIdx];
@@ -1278,34 +1290,66 @@ function computeGridPoints(player, round, holeIdx, gross) {
   return calcStableford(gross, hole.par, hole.si, effectiveHcp);
 }
 
-// Called on every keystroke in a grid score input — updates that cell's
-// points badge and the player's row total (points + shots), all locally
-// in the DOM (no Firebase write until Save/switch/exit).
-function handleGridInputChange(inputEl, round) {
-  const pid    = inputEl.dataset.player;
-  const h      = parseInt(inputEl.dataset.hole);
-  const player = state.comp.players[pid];
-  if (!player) return;
+// Recomputes everything derived from the current (possibly unsaved) grid
+// inputs: each cell's Stableford points badge, each player's row totals
+// (gross + points + skins), and which cells are highlighted as skin
+// winners for this round. Runs on every keystroke and after each render.
+function refreshGridComputedUI(round) {
+  const players   = state.comp.players ? Object.values(state.comp.players) : [];
+  const scoresMap = {};
+  players.forEach(p => { scoresMap[p.id] = {}; });
 
-  const gross  = parseInt(inputEl.value) || 0;
-  const pts    = gross > 0 ? computeGridPoints(player, round, h, gross) : null;
+  // 1) Update each hole's points badge + build a scores map for skins/totals
+  document.querySelectorAll('#grid-table .grid-input').forEach(inp => {
+    const pid    = inp.dataset.player;
+    const h      = parseInt(inp.dataset.hole);
+    const player = state.comp.players[pid];
+    if (!player) return;
 
-  const ptsEl = inputEl.parentElement.querySelector('.grid-pts');
-  if (ptsEl) ptsEl.textContent = pts !== null ? pts + 'pt' : '';
+    const gross = parseInt(inp.value) || 0;
+    const pts   = gross > 0 ? computeGridPoints(player, round, h, gross) : null;
 
-  const row = document.querySelector(`#grid-table tr[data-player-row="${pid}"]`);
-  if (!row) return;
-  let totalPts = 0, totalGross = 0;
-  row.querySelectorAll('.grid-input').forEach(inp => {
-    const g = parseInt(inp.value) || 0;
-    if (g > 0) {
-      totalGross += g;
-      const hh = parseInt(inp.dataset.hole);
-      totalPts += computeGridPoints(player, round, hh, g) || 0;
+    const ptsEl = inp.parentElement.querySelector('.grid-pts');
+    if (ptsEl) ptsEl.textContent = pts !== null ? pts + 'pt' : '';
+
+    if (gross > 0) scoresMap[pid][h] = { gross, points: pts };
+  });
+
+  // 2) Skins for this round, based on current on-screen values, respecting
+  // the competition's Skins Rollover setting.
+  const skins = calcSkins(round, scoresMap, state.comp.players, state.comp.skinsRollover !== false);
+
+  document.querySelectorAll('#grid-table td.grid-skin-cell').forEach(td => td.classList.remove('grid-skin-cell'));
+
+  const skinCounts = {};
+  players.forEach(p => { skinCounts[p.id] = 0; });
+  skins.forEach((s, h) => {
+    if (s.winner) {
+      skinCounts[s.winner] = (skinCounts[s.winner] || 0) + s.pot;
+      const inp = document.querySelector(`#grid-table input[data-player="${s.winner}"][data-hole="${h}"]`);
+      const td  = inp && inp.closest('td');
+      if (td) td.classList.add('grid-skin-cell');
     }
   });
-  const totalCell = row.querySelector('.grid-total');
-  if (totalCell) totalCell.innerHTML = `${totalPts}<span class="grid-total-sub">${totalGross} shots</span>`;
+
+  // 3) Row totals: gross on top, points below, skins count below that
+  players.forEach(p => {
+    const row = document.querySelector(`#grid-table tr[data-player-row="${p.id}"]`);
+    if (!row) return;
+    let totalGross = 0, totalPts = 0;
+    Object.values(scoresMap[p.id] || {}).forEach(hs => {
+      totalGross += hs.gross;
+      totalPts   += hs.points || 0;
+    });
+    const totalCell = row.querySelector('.grid-total');
+    if (!totalCell) return;
+    const grossEl = totalCell.querySelector('.grid-total-gross');
+    const subEl   = totalCell.querySelector('.grid-total-sub');
+    const skinsEl = totalCell.querySelector('.grid-total-skins');
+    if (grossEl) grossEl.textContent = totalGross || 0;
+    if (subEl)   subEl.textContent   = `${totalPts} Points`;
+    if (skinsEl) skinsEl.textContent = skinCounts[p.id] > 0 ? `🏅 ${skinCounts[p.id]}` : '';
+  });
 }
 
 // Reads every input in the grid table, recalculates Stableford points, and

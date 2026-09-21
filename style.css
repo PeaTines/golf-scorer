@@ -784,6 +784,13 @@ body.wide-screen .screen {
   font-weight: 400;
   opacity: 0.85;
 }
+.grid-yards {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
 .grid-player-col {
   text-align: left;
   min-width: 140px;
@@ -804,6 +811,13 @@ thead .grid-player-col {
   font-weight: 400;
   color: var(--text-muted);
 }
+.grid-playing-hcp {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--green);
+}
+
 .grid-input {
   width: 42px;
   padding: 6px 2px;
@@ -829,18 +843,36 @@ thead .grid-player-col {
 }
 
 .grid-total {
+  background: #f4f6f0;
+}
+.grid-total-gross {
+  display: block;
   font-weight: 800;
   color: var(--green);
-  background: #f4f6f0;
   font-size: 1rem;
 }
 .grid-total-sub {
   display: block;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--blue);
   margin-top: 2px;
 }
+.grid-total-skins {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--green-dark);
+  margin-top: 2px;
+}
+
+/* Highlights the winning player's cell for a hole where a skin was won,
+   mirroring the gold skin-won styling used on the Leaderboard/Score screens. */
+.grid-skin-cell {
+  background: #fff8e1 !important;
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+
 
 
 
