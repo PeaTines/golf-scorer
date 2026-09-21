@@ -1241,19 +1241,71 @@ function renderGridTable(ri) {
   let bodyHtml = '<tbody>';
   players.forEach(p => {
     const pScores = (state.gridScores && state.gridScores[p.id]) || {};
-    let total = 0;
-    bodyHtml += `<tr><td class="grid-player-col">${escHtml(p.name)}<span class="grid-hcp">HCP ${p.handicap}</span></td>`;
+    let totalPts = 0, totalGross = 0;
+    bodyHtml += `<tr data-player-row="${p.id}"><td class="grid-player-col">${escHtml(p.name)}<span class="grid-hcp">HCP ${p.handicap}</span></td>`;
     for (let h = 0; h < 18; h++) {
-      const hs  = pScores[h] || {};
-      const val = hs.gross > 0 ? hs.gross : '';
-      if (hs.gross > 0) total += hs.points || 0;
-      bodyHtml += `<td><input type="number" class="grid-input" min="1" max="15" inputmode="numeric" data-player="${p.id}" data-hole="${h}" value="${val}"></td>`;
+      const hs    = pScores[h] || {};
+      const gross = hs.gross > 0 ? hs.gross : '';
+      const pts   = hs.gross > 0 ? computeGridPoints(p, round, h, hs.gross) : null;
+      if (hs.gross > 0) { totalPts += pts || 0; totalGross += hs.gross; }
+      bodyHtml += `<td>
+        <input type="number" class="grid-input" min="1" max="15" inputmode="numeric" data-player="${p.id}" data-hole="${h}" value="${gross}">
+        <span class="grid-pts">${pts !== null ? pts + 'pt' : ''}</span>
+      </td>`;
     }
-    bodyHtml += `<td class="grid-total">${total}</td></tr>`;
+    bodyHtml += `<td class="grid-total">${totalPts}<span class="grid-total-sub">${totalGross || 0} shots</span></td></tr>`;
   });
   bodyHtml += '</tbody>';
 
   table.innerHTML = headerHtml + bodyHtml;
+
+  // Live-update Stableford points + totals as the user types, without
+  // needing to save first. Assigning via .oninput (not addEventListener)
+  // avoids stacking duplicate handlers across re-renders of this table.
+  table.oninput = (e) => {
+    if (!e.target.classList.contains('grid-input')) return;
+    handleGridInputChange(e.target, round);
+  };
+}
+
+// Calculates the Stableford points for a single hole entry, or null if no
+// score has been entered yet.
+function computeGridPoints(player, round, holeIdx, gross) {
+  if (!gross || gross <= 0) return null;
+  const hole = round.holes[holeIdx];
+  if (!hole) return null;
+  const effectiveHcp = getEffectiveHandicap(player, round);
+  return calcStableford(gross, hole.par, hole.si, effectiveHcp);
+}
+
+// Called on every keystroke in a grid score input — updates that cell's
+// points badge and the player's row total (points + shots), all locally
+// in the DOM (no Firebase write until Save/switch/exit).
+function handleGridInputChange(inputEl, round) {
+  const pid    = inputEl.dataset.player;
+  const h      = parseInt(inputEl.dataset.hole);
+  const player = state.comp.players[pid];
+  if (!player) return;
+
+  const gross  = parseInt(inputEl.value) || 0;
+  const pts    = gross > 0 ? computeGridPoints(player, round, h, gross) : null;
+
+  const ptsEl = inputEl.parentElement.querySelector('.grid-pts');
+  if (ptsEl) ptsEl.textContent = pts !== null ? pts + 'pt' : '';
+
+  const row = document.querySelector(`#grid-table tr[data-player-row="${pid}"]`);
+  if (!row) return;
+  let totalPts = 0, totalGross = 0;
+  row.querySelectorAll('.grid-input').forEach(inp => {
+    const g = parseInt(inp.value) || 0;
+    if (g > 0) {
+      totalGross += g;
+      const hh = parseInt(inp.dataset.hole);
+      totalPts += computeGridPoints(player, round, hh, g) || 0;
+    }
+  });
+  const totalCell = row.querySelector('.grid-total');
+  if (totalCell) totalCell.innerHTML = `${totalPts}<span class="grid-total-sub">${totalGross} shots</span>`;
 }
 
 // Reads every input in the grid table, recalculates Stableford points, and

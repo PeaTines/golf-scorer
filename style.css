@@ -766,7 +766,9 @@ body.wide-screen .screen {
   padding: 6px 4px;
   text-align: center;
   font-size: 0.85rem;
+  vertical-align: middle;
 }
+
 .grid-table thead th {
   background: var(--green-dark);
   color: white;
@@ -810,13 +812,35 @@ thead .grid-player-col {
   text-align: center;
   font-size: 0.95rem;
   -moz-appearance: textfield;
+  display: block;
+  margin: 0 auto;
 }
 .grid-input:focus { border-color: var(--green); outline: none; background: #f0f7f0; }
+
+/* Live Stableford points badge shown under each hole's score input —
+   a distinct colour (blue) differentiates it from the raw gross score. */
+.grid-pts {
+  display: block;
+  min-height: 14px;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--blue);
+}
+
 .grid-total {
   font-weight: 800;
   color: var(--green);
   background: #f4f6f0;
   font-size: 1rem;
 }
+.grid-total-sub {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
 
 
