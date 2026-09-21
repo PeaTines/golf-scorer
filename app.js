@@ -1429,10 +1429,21 @@ function renderLeaderboard() {
     const roundSkins = comp.rounds.map((round, ri) =>
       calcSkins(round, allScores[ri] || {}, comp.players, comp.skinsRollover !== false)
     );
-    const skinCounts = {};
-    players.forEach(p => { skinCounts[p.id] = 0; });
-    roundSkins.forEach(skins => skins.forEach(s => {
-      if (s.winner && skinCounts[s.winner] !== undefined) skinCounts[s.winner] += s.pot;
+
+    // Skin counts per player, both overall (all rounds) and per individual
+    // round — so the leaderboard can show the right figure depending on
+    // whether the "Overall" tab or a specific course tab is selected.
+    const skinCountsOverall = {};
+    const skinCountsByRound = comp.rounds.map(() => ({}));
+    players.forEach(p => {
+      skinCountsOverall[p.id] = 0;
+      skinCountsByRound.forEach(rc => { rc[p.id] = 0; });
+    });
+    roundSkins.forEach((skins, ri) => skins.forEach(s => {
+      if (s.winner && skinCountsOverall[s.winner] !== undefined) {
+        skinCountsOverall[s.winner] += s.pot;
+        skinCountsByRound[ri][s.winner] += s.pot;
+      }
     }));
 
     const totals = players.map(p => {
@@ -1442,17 +1453,18 @@ function renderLeaderboard() {
         Object.values(rScores).forEach(hs => {
           if (hs.gross > 0) { pts += hs.points || 0; holes++; }
         });
-        return { pts, holes };
+        return { pts, holes, skins: skinCountsByRound[ri][p.id] || 0 };
       });
       const totalPts    = roundPts.reduce((s, r) => s + r.pts, 0);
       const holesPlayed = roundPts.reduce((s, r) => s + r.holes, 0);
-      return { ...p, roundPts, totalPts, holesPlayed, skins: skinCounts[p.id] || 0 };
+      return { ...p, roundPts, totalPts, holesPlayed, skins: skinCountsOverall[p.id] || 0 };
     });
 
     const display = totals.map(t => ({
       ...t,
       displayPts:   state.lbRound === 'overall' ? t.totalPts   : t.roundPts[state.lbRound].pts,
       displayHoles: state.lbRound === 'overall' ? t.holesPlayed : t.roundPts[state.lbRound].holes,
+      displaySkins: state.lbRound === 'overall' ? t.skins       : t.roundPts[state.lbRound].skins,
     })).sort((a, b) => b.displayPts - a.displayPts || b.displayHoles - a.displayHoles);
 
     renderLbTable(display);
@@ -1490,8 +1502,8 @@ function renderLbTable(display) {
         <div class="lb-name">${escHtml(t.name)}</div>
         <div class="lb-sub">${hcpDisplay} · ${t.displayHoles} holes${roundBreakdown}</div>
       </div>
+      ${t.displaySkins > 0 ? `<div class="lb-skins">🏅 ${t.displaySkins}</div>` : ''}
       <div class="lb-pts">${t.displayPts}</div>
-      ${t.skins > 0 ? `<div class="lb-skins">🏅 ${t.skins}</div>` : ''}
     `;
     tableEl.appendChild(row);
   });
