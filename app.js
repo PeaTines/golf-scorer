@@ -448,6 +448,8 @@ function initAdminSetup() {
   $('setup-group').value     = c ? (c.group || '') : '';
   $('setup-admin-pin').value  = c ? (c.adminPin || '') : '';
   $('setup-skins-rollover').checked = c ? (c.skinsRollover !== false) : true;
+  const savedHandicapAllowance = c ? Number(c.handicapAllowance) : NaN;
+  $('setup-handicap-allowance').value = Number.isFinite(savedHandicapAllowance) ? savedHandicapAllowance : 100;
 
   // Players
   const playersList = $('players-list');
@@ -572,12 +574,12 @@ function coursePropertiesChanged(oldRound, newRound) {
   return false;
 }
 
-async function recalculateRoundScores(compId, roundIndex, round, roundScores, players) {
+async function recalculateRoundScores(compId, roundIndex, round, roundScores, players, handicapAllowance) {
   for (const [playerId, playerScores] of Object.entries(roundScores)) {
     const player = players[playerId];
     if (!player) continue;
 
-    const effectiveHcp = getEffectiveHandicap(player, round);
+    const effectiveHcp = getEffectiveHandicap(player, round, handicapAllowance);
 
     for (const [holeIdxStr, hs] of Object.entries(playerScores)) {
       const holeIdx = parseInt(holeIdxStr);
@@ -601,8 +603,14 @@ async function saveSetup() {
   const name  = $('setup-comp-name').value.trim();
   const group = ($('setup-group').value || '').trim().toLowerCase();
   const pin   = $('setup-admin-pin').value.trim();
+  const handicapAllowanceInput = $('setup-handicap-allowance').value.trim();
+  const handicapAllowance = Number(handicapAllowanceInput);
   if (!name) { showSetupError('Please enter a competition name.'); return; }
   if (!pin)  { showSetupError('Please enter an admin PIN.'); return; }
+  if (handicapAllowanceInput === '' || !Number.isInteger(handicapAllowance) || handicapAllowance < 0 || handicapAllowance > 100) {
+    showSetupError('Handicap allowance must be a whole percentage between 0 and 100.');
+    return;
+  }
 
   // Collect players
   const nameInputs = document.querySelectorAll('.player-name-input');
@@ -645,8 +653,12 @@ async function saveSetup() {
   const skinsRollover = $('setup-skins-rollover').checked;
 
   const isNew = !state.activeCompId || state.isCopying;
+  const previousHandicapAllowance = state.comp && state.comp.handicapAllowance != null
+    ? Number(state.comp.handicapAllowance)
+    : 100;
+  const handicapAllowanceChanged = !isNew && previousHandicapAllowance !== handicapAllowance;
 
-  const compMeta = { name, adminPin: pin, group, players, rounds, skinsRollover, updatedAt: Date.now() };
+  const compMeta = { name, adminPin: pin, group, players, rounds, skinsRollover, handicapAllowance, updatedAt: Date.now() };
   if (isNew) {
     compMeta.createdAt = Date.now();
   } else if (state.comp && state.comp.createdAt) {
@@ -681,7 +693,7 @@ async function saveSetup() {
         const oldRound = oldRounds[ri];
         const newRound = rounds[ri];
 
-        if (coursePropertiesChanged(oldRound, newRound)) {
+        if (coursePropertiesChanged(oldRound, newRound) || handicapAllowanceChanged) {
           // Check if scores exist for this round
           const scoresSnap = await get(ref(db, `competitions/${compId}/scores/${ri}`));
           const roundScores = scoresSnap.val();
@@ -689,11 +701,11 @@ async function saveSetup() {
           if (roundScores && Object.keys(roundScores).length > 0) {
             const courseName = newRound.name || `Round ${ri + 1}`;
             const shouldRecalc = confirm(
-              `Course properties have changed for "${courseName}".\n\nRecalculate all stableford scores with the new course data?\n\nOK = Yes   Cancel = No`
+              `Course properties or handicap allowance have changed for "${courseName}".\n\nRecalculate all Stableford scores with the new settings?\n\nOK = Yes   Cancel = No`
             );
 
             if (shouldRecalc) {
-              await recalculateRoundScores(compId, ri, newRound, roundScores, players);
+              await recalculateRoundScores(compId, ri, newRound, roundScores, players, handicapAllowance);
             }
           }
         }
@@ -840,7 +852,8 @@ function renderScoreScreen() {
   const effectiveHcp = getEffectiveHandicap(player, currentRound);
   const hcpInfoEl    = $('score-hcp-info');
   if (currentRound.slope_rating && currentRound.slope_rating !== 0) {
-    hcpInfoEl.textContent = `HCP Index: ${player.handicap} → Playing Handicap: ${effectiveHcp} (Slope ${currentRound.slope_rating}, CR ${currentRound.course_rating}, Par ${currentRound.course_par})`;
+    const handicapAllowance = Number(comp.handicapAllowance ?? 100);
+    hcpInfoEl.textContent = `HCP Index: ${player.handicap} → Playing Handicap: ${effectiveHcp} (${handicapAllowance}% allowance; Slope ${currentRound.slope_rating}, CR ${currentRound.course_rating}, Par ${currentRound.course_par})`;
     hcpInfoEl.classList.remove('hidden');
   } else {
     hcpInfoEl.classList.add('hidden');
@@ -1109,9 +1122,12 @@ function calcCourseHandicap(handicapIndex, slopeRating, courseRating, coursePar)
   return Math.round(handicapIndex * (slopeRating / 113) + (courseRating - coursePar));
 }
 
-function getEffectiveHandicap(player, round) {
-  if (!round || !round.slope_rating || round.slope_rating === 0) return Math.round(player.handicap);
-  return calcCourseHandicap(player.handicap, round.slope_rating, round.course_rating || 0, round.course_par || 72);
+function getEffectiveHandicap(player, round, handicapAllowance = state.comp?.handicapAllowance ?? 100) {
+  const courseHandicap = (!round || !round.slope_rating || round.slope_rating === 0)
+    ? Math.round(player.handicap)
+    : calcCourseHandicap(player.handicap, round.slope_rating, round.course_rating || 0, round.course_par || 72);
+  const allowance = Number.isFinite(Number(handicapAllowance)) ? Number(handicapAllowance) : 100;
+  return Math.round(courseHandicap * allowance / 100);
 }
 
 // =====================================================
