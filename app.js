@@ -631,12 +631,30 @@ async function saveSetup() {
   if (roundBlocks.length === 0) { showSetupError('Please add at least one course.'); return; }
 
   const rounds = [];
+  let invalidCourseRatings = false;
   roundBlocks.forEach((block, pos) => {
     const bid = block.dataset.blockId;
     const roundName   = ($(`round-name-${bid}`)?.value || '').trim() || `Round ${pos + 1}`;
-    const slopeRating  = parseFloat($(`round-slope-${bid}`)?.value) || 0;
-    const courseRating = parseFloat($(`round-course-rating-${bid}`)?.value) || 0;
-    const coursePar    = parseInt($(`round-course-par-${bid}`)?.value) || 0;
+    const slopeInput = ($(`round-slope-${bid}`)?.value || '').trim();
+    const courseRatingInput = ($(`round-course-rating-${bid}`)?.value || '').trim();
+    const courseParInput = ($(`round-course-par-${bid}`)?.value || '').trim();
+    const hasAnyCourseRating = slopeInput !== '' || courseRatingInput !== '' || courseParInput !== '';
+    const hasAllCourseRatings = slopeInput !== '' && courseRatingInput !== '' && courseParInput !== '';
+    if (hasAnyCourseRating && !hasAllCourseRatings) {
+      invalidCourseRatings = true;
+      return;
+    }
+    const slopeRating = slopeInput === '' ? 0 : Number(slopeInput);
+    const courseRating = courseRatingInput === '' ? 0 : Number(courseRatingInput);
+    const coursePar = courseParInput === '' ? 0 : Number(courseParInput);
+    if (hasAllCourseRatings && (
+      !Number.isInteger(slopeRating) || slopeRating < 55 || slopeRating > 155 ||
+      !Number.isFinite(courseRating) || courseRating < 60 || courseRating > 80 ||
+      !Number.isInteger(coursePar) || coursePar < 68 || coursePar > 76
+    )) {
+      invalidCourseRatings = true;
+      return;
+    }
 
     let holes;
     if (pendingCourseHoles[bid]) {
@@ -649,6 +667,11 @@ async function saveSetup() {
 
     rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
   });
+
+  if (invalidCourseRatings) {
+    showSetupError('Enter Slope Rating, Course Rating, and Course Par together for each course, or leave all three blank.');
+    return;
+  }
 
   const skinsRollover = $('setup-skins-rollover').checked;
 
@@ -851,7 +874,13 @@ function renderScoreScreen() {
   const currentRound = comp.rounds[state.scoreRound];
   const effectiveHcp = getEffectiveHandicap(player, currentRound);
   const hcpInfoEl    = $('score-hcp-info');
-  if (currentRound.slope_rating && currentRound.slope_rating !== 0) {
+  const hasAnyCourseRating = Boolean(currentRound.slope_rating || currentRound.course_rating || currentRound.course_par);
+  const hasCompleteCourseRatings = Number(currentRound.slope_rating) > 0 &&
+    Number(currentRound.course_rating) > 0 && Number(currentRound.course_par) > 0;
+  if (hasAnyCourseRating && !hasCompleteCourseRatings) {
+    hcpInfoEl.textContent = 'Course ratings are incomplete. Using Handicap Index without course adjustment; enter Slope, Course Rating, and Par in Competition Setup.';
+    hcpInfoEl.classList.remove('hidden');
+  } else if (hasCompleteCourseRatings) {
     const handicapAllowance = Number(comp.handicapAllowance ?? 100);
     hcpInfoEl.textContent = `HCP Index: ${player.handicap} → Playing Handicap: ${effectiveHcp} (${handicapAllowance}% allowance; Slope ${currentRound.slope_rating}, CR ${currentRound.course_rating}, Par ${currentRound.course_par})`;
     hcpInfoEl.classList.remove('hidden');
@@ -1119,15 +1148,19 @@ window.saveAndNextHole = saveAndNextHole;
 // COURSE HANDICAP CALCULATION
 // =====================================================
 function calcCourseHandicap(handicapIndex, slopeRating, courseRating, coursePar) {
-  return Math.round(handicapIndex * (slopeRating / 113) + (courseRating - coursePar));
+  // Keep the Course Handicap unrounded; WHS applies the allowance before rounding
+  // the final Playing Handicap.
+  return handicapIndex * (slopeRating / 113) + (courseRating - coursePar);
 }
 
 function getEffectiveHandicap(player, round, handicapAllowance = state.comp?.handicapAllowance ?? 100) {
-  const courseHandicap = (!round || !round.slope_rating || round.slope_rating === 0)
-    ? Math.round(player.handicap)
-    : calcCourseHandicap(player.handicap, round.slope_rating, round.course_rating || 0, round.course_par || 72);
+  const hasCompleteCourseRatings = round && Number(round.slope_rating) > 0 &&
+    Number(round.course_rating) > 0 && Number(round.course_par) > 0;
+  const rawCourseHandicap = hasCompleteCourseRatings
+    ? calcCourseHandicap(player.handicap, Number(round.slope_rating), Number(round.course_rating), Number(round.course_par))
+    : Number(player.handicap);
   const allowance = Number.isFinite(Number(handicapAllowance)) ? Number(handicapAllowance) : 100;
-  return Math.round(courseHandicap * allowance / 100);
+  return Math.round(rawCourseHandicap * allowance / 100);
 }
 
 // =====================================================
