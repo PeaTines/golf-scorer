@@ -22,6 +22,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* iOS Safari ignores user-scalable=no; touch-action stops double-tap zoom
+   when tapping buttons repeatedly (e.g. the +/- score steppers). */
+html, body, button, .hole-card, .modal { touch-action: manipulation; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
@@ -71,6 +75,7 @@ body {
   white-space: nowrap;
 }
 .btn-back:active { background: rgba(255,255,255,0.25); }
+.btn-back.header-action { margin-left: auto; }
 
 /* ---- CARD ---- */
 .card {
@@ -824,7 +829,7 @@ thead .grid-player-col {
   border: 1px solid var(--border);
   border-radius: 6px;
   text-align: center;
-  font-size: 0.95rem;
+  font-size: 16px; /* >=16px stops iOS Safari zooming in on focus */
   -moz-appearance: textfield;
   display: block;
   margin: 0 auto;

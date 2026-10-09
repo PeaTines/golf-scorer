@@ -39,7 +39,7 @@
     <div id="menu-comp-info" class="info-text"></div>
     <div id="menu-player-list" class="player-grid"></div>
     <div class="divider"></div>
-    <button class="btn btn-outline btn-sm" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+    <button class="btn btn-outline btn-sm" onclick="openLeaderboard('screen-comp-menu')">📊 View Leaderboard</button>
     <button class="btn btn-outline btn-sm" onclick="openGridScreen('screen-comp-menu')">🖥️ Grid Score Entry</button>
     <button class="btn btn-outline btn-sm" onclick="showAdminLogin()">🔧 Admin</button>
   </div>
@@ -126,6 +126,7 @@
   <div class="screen-header">
     <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <h2 id="score-player-name"></h2>
+    <button class="btn-back header-action" onclick="openLeaderboard('screen-score')">📊 Leaderboard</button>
   </div>
   <div class="round-tabs" id="score-round-tabs"></div>
   <div id="scorer-group-bar" class="scorer-group-bar hidden"></div>
@@ -154,7 +155,7 @@
 <!-- Leaderboard -->
 <div id="screen-leaderboard" class="screen hidden">
   <div class="screen-header">
-    <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
+    <button class="btn-back" onclick="leaderboardBack()">← Back</button>
     <h2>📊 Leaderboard</h2>
   </div>
   <div class="round-tabs" id="lb-round-tabs"></div>
@@ -180,7 +181,7 @@
   </div>
   <div class="card">
     <button class="btn btn-primary btn-lg" onclick="showScreen('screen-admin-setup')">✏️ Edit Competition Setup</button>
-    <button class="btn btn-outline btn-lg" onclick="showScreen('screen-leaderboard')">📊 View Leaderboard</button>
+    <button class="btn btn-outline btn-lg" onclick="openLeaderboard('screen-comp-menu')">📊 View Leaderboard</button>
     <button class="btn btn-outline btn-lg" onclick="openGridScreen('screen-admin-panel')">🖥️ Grid Score Entry (Tablet/Laptop)</button>
     <div class="divider"></div>
     <button class="btn btn-danger btn-lg" onclick="showResetScoresConfirm()">🔄 Reset Scores</button>
@@ -251,6 +252,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>
