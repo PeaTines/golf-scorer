@@ -77,6 +77,18 @@ function showScreen(id) {
 }
 window.showScreen = showScreen;
 
+// Open the leaderboard remembering which screen to return to
+// (so a scorer can peek at it mid-round and come straight back).
+function openLeaderboard(returnScreen) {
+  state.lbReturnScreen = returnScreen || 'screen-comp-menu';
+  showScreen('screen-leaderboard');
+}
+function leaderboardBack() {
+  showScreen(state.lbReturnScreen || 'screen-comp-menu');
+}
+window.openLeaderboard = openLeaderboard;
+window.leaderboardBack = leaderboardBack;
+
 // =====================================================
 // LOBBY / HOME SCREEN
 // =====================================================
