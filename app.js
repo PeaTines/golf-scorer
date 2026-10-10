@@ -578,7 +578,7 @@ function syncAdjustmentBoxes(removedPos, initialByRow) {
       const cell = document.createElement('label');
       cell.className = 'adj-cell';
       cell.innerHTML = `<span class="adj-label">Day ${d + 1}</span>` +
-        `<input type="number" class="input-sm adj-input" step="1" min="-9" max="9" placeholder="0" value="${vals[d] ?? ''}">`;
+        `<input type="number" class="input-sm adj-input" step="1" min="-9" max="9" value="${vals[d] ?? ''}">`;
       box.appendChild(cell);
     }
     box.classList.toggle('hidden', numRounds === 0);
