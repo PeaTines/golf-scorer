@@ -438,14 +438,17 @@ function addRoundBlock() {
   $('rounds-setup').appendChild(div);
   updateRoundBlockHeaders();
   updateRemoveButtons();
+  syncAdjustmentBoxes();
 }
 window.addRoundBlock = addRoundBlock;
 
 function removeRoundBlock(blockId) {
   const block = document.querySelector(`#rounds-setup .round-setup-block[data-block-id="${blockId}"]`);
+  const pos = Array.from(document.querySelectorAll('#rounds-setup .round-setup-block')).indexOf(block);
   if (block) block.remove();
   updateRoundBlockHeaders();
   updateRemoveButtons();
+  syncAdjustmentBoxes(pos >= 0 ? pos : undefined);
 }
 window.removeRoundBlock = removeRoundBlock;
 
@@ -472,6 +475,12 @@ function initAdminSetup() {
   } else {
     players.forEach(p => addPlayerRow(p.name, p.handicap));
   }
+  // Existing per-day adjustments, per player row, indexed by round position
+  // (Adjustments are day-specific, so they are not carried over when copying a competition.)
+  const adjByRow = players.map(p => (c && isEdit ? (c.rounds || []) : []).map(r => {
+    const v = r && r.hcpAdjust ? r.hcpAdjust[p.id] : undefined;
+    return v ? v : '';
+  }));
 
   // Reset block state for fresh init
   courseBlockCounter = 0;
@@ -493,6 +502,7 @@ function initAdminSetup() {
 
   updateRoundBlockHeaders();
   updateRemoveButtons();
+  syncAdjustmentBoxes(undefined, adjByRow);
 
   $('setup-error').classList.add('hidden');
 }
@@ -507,10 +517,37 @@ function addPlayerRow(name = '', hcp = '') {
     <input type="text" class="input player-name-input" placeholder="Player ${idx}" value="${escHtml(name)}">
     <input type="number" class="input-sm player-hcp-input" placeholder="HCP" min="0" max="54" step="0.1" value="${hcp}" inputmode="decimal">
     <button class="btn-remove" onclick="this.parentElement.remove()">✕</button>
+    <div class="player-adj"></div>
   `;
   div.appendChild(row);
+  syncAdjustmentBoxes();
 }
 window.addPlayerRow = addPlayerRow;
+
+// ---- Per-player, per-day playing handicap adjustments ----
+// Each player row has one small box per course/day. Values are whole shots
+// (e.g. -2 or +1) added to that player's playing handicap for that round only.
+// Blank = no adjustment. Boxes are kept in step with the course blocks.
+function syncAdjustmentBoxes(removedPos, initialByRow) {
+  const numRounds = document.querySelectorAll('#rounds-setup .round-setup-block').length;
+  document.querySelectorAll('#players-list .player-row').forEach((row, rowIdx) => {
+    const box = row.querySelector('.player-adj');
+    if (!box) return;
+    let vals = Array.from(box.querySelectorAll('.adj-input')).map(i => i.value);
+    if (initialByRow && initialByRow[rowIdx]) vals = initialByRow[rowIdx].slice();
+    if (removedPos !== undefined && removedPos !== null) vals.splice(removedPos, 1);
+    box.innerHTML = '';
+    for (let d = 0; d < numRounds; d++) {
+      const cell = document.createElement('label');
+      cell.className = 'adj-cell';
+      cell.innerHTML = `<span class="adj-label">Day ${d + 1}</span>` +
+        `<input type="number" class="input-sm adj-input" step="1" min="-9" max="9" placeholder="0" value="${vals[d] ?? ''}">`;
+      box.appendChild(cell);
+    }
+    box.classList.toggle('hidden', numRounds === 0);
+  });
+}
+window.syncAdjustmentBoxes = syncAdjustmentBoxes;
 
 function editCourse(blockId) {
   state.editingCourse = blockId;
@@ -570,6 +607,11 @@ window.saveCourseSetup = saveCourseSetup;
 // =====================================================
 // COURSE PROPERTY COMPARISON (for recalculation prompt)
 // =====================================================
+function adjustmentsChanged(oldRound, newRound) {
+  const norm = r => JSON.stringify(Object.entries((r && r.hcpAdjust) || {}).filter(([, v]) => v).sort());
+  return norm(oldRound) !== norm(newRound);
+}
+
 function coursePropertiesChanged(oldRound, newRound) {
   if (!oldRound || !newRound) return false;
   if (oldRound.slope_rating !== newRound.slope_rating) return true;
@@ -628,12 +670,16 @@ async function saveSetup() {
   const nameInputs = document.querySelectorAll('.player-name-input');
   const hcpInputs  = document.querySelectorAll('.player-hcp-input');
   const players = {};
+  const playerRows = Array.from(document.querySelectorAll('#players-list .player-row'));
+  const adjustmentValues = {}; // playerId -> array of raw box values by round position
+  let invalidAdjustment = false;
   nameInputs.forEach((inp, i) => {
     const n = inp.value.trim();
     if (n) {
       const hcp = parseFloat(hcpInputs[i].value) || 0;
       const id  = `player_${i}`;
       players[id] = { id, name: n, handicap: hcp };
+      adjustmentValues[id] = Array.from(playerRows[i].querySelectorAll('.adj-input')).map(x => x.value.trim());
     }
   });
   if (Object.keys(players).length === 0) { showSetupError('Please add at least one player.'); return; }
@@ -677,8 +723,24 @@ async function saveSetup() {
       holes = DEFAULT_PARS.map((par, idx) => ({ par, si: idx + 1 }));
     }
 
-    rounds.push({ name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes });
+    const round = { name: roundName, slope_rating: slopeRating, course_rating: courseRating, course_par: coursePar, holes };
+    // Playing handicap adjustments for this round (omit zeros/blanks; Firebase rejects undefined)
+    const hcpAdjust = {};
+    Object.entries(adjustmentValues).forEach(([pid, vals]) => {
+      const raw = vals[pos];
+      if (raw === undefined || raw === '') return;
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < -9 || n > 9) { invalidAdjustment = true; return; }
+      if (n !== 0) hcpAdjust[pid] = n;
+    });
+    if (Object.keys(hcpAdjust).length > 0) round.hcpAdjust = hcpAdjust;
+    rounds.push(round);
   });
+
+  if (invalidAdjustment) {
+    showSetupError('Handicap adjustments must be whole numbers between -9 and 9 (leave blank for none).');
+    return;
+  }
 
   if (invalidCourseRatings) {
     showSetupError('Enter Slope Rating, Course Rating, and Course Par together for each course, or leave all three blank.');
@@ -728,7 +790,7 @@ async function saveSetup() {
         const oldRound = oldRounds[ri];
         const newRound = rounds[ri];
 
-        if (coursePropertiesChanged(oldRound, newRound) || handicapAllowanceChanged) {
+        if (coursePropertiesChanged(oldRound, newRound) || adjustmentsChanged(oldRound, newRound) || handicapAllowanceChanged) {
           // Check if scores exist for this round
           const scoresSnap = await get(ref(db, `competitions/${compId}/scores/${ri}`));
           const roundScores = scoresSnap.val();
@@ -736,7 +798,7 @@ async function saveSetup() {
           if (roundScores && Object.keys(roundScores).length > 0) {
             const courseName = newRound.name || `Round ${ri + 1}`;
             const shouldRecalc = confirm(
-              `Course properties or handicap allowance have changed for "${courseName}".\n\nRecalculate all Stableford scores with the new settings?\n\nOK = Yes   Cancel = No`
+              `Course properties, handicap allowance or handicap adjustments have changed for "${courseName}".\n\nRecalculate all Stableford scores with the new settings?\n\nOK = Yes   Cancel = No`
             );
 
             if (shouldRecalc) {
@@ -886,6 +948,7 @@ function renderScoreScreen() {
   const currentRound = comp.rounds[state.scoreRound];
   const effectiveHcp = getEffectiveHandicap(player, currentRound);
   const hcpInfoEl    = $('score-hcp-info');
+  const adjValue     = Number(currentRound.hcpAdjust && currentRound.hcpAdjust[player.id]) || 0;
   const hasAnyCourseRating = Boolean(currentRound.slope_rating || currentRound.course_rating || currentRound.course_par);
   const hasCompleteCourseRatings = Number(currentRound.slope_rating) > 0 &&
     Number(currentRound.course_rating) > 0 && Number(currentRound.course_par) > 0;
@@ -894,7 +957,8 @@ function renderScoreScreen() {
     hcpInfoEl.classList.remove('hidden');
   } else if (hasCompleteCourseRatings) {
     const handicapAllowance = Number(comp.handicapAllowance ?? 100);
-    hcpInfoEl.textContent = `HCP Index: ${player.handicap} → Playing Handicap: ${effectiveHcp} (${handicapAllowance}% allowance; Slope ${currentRound.slope_rating}, CR ${currentRound.course_rating}, Par ${currentRound.course_par})`;
+    const adjNote = adjValue ? `, ${adjValue > 0 ? '+' : '−'}${Math.abs(adjValue)} adjustment` : '';
+    hcpInfoEl.textContent = `HCP Index: ${player.handicap} → Playing Handicap: ${effectiveHcp} (${handicapAllowance}% allowance${adjNote}; Slope ${currentRound.slope_rating}, CR ${currentRound.course_rating}, Par ${currentRound.course_par})`;
     hcpInfoEl.classList.remove('hidden');
   } else {
     hcpInfoEl.classList.add('hidden');
@@ -1172,7 +1236,9 @@ function getEffectiveHandicap(player, round, handicapAllowance = state.comp?.han
     ? calcCourseHandicap(player.handicap, Number(round.slope_rating), Number(round.course_rating), Number(round.course_par))
     : Number(player.handicap);
   const allowance = Number.isFinite(Number(handicapAllowance)) ? Number(handicapAllowance) : 100;
-  return Math.round(rawCourseHandicap * allowance / 100);
+  // Per-round manual adjustment (whole shots) applied after the allowance is rounded
+  const adjustment = Number(round && round.hcpAdjust && round.hcpAdjust[player.id]) || 0;
+  return Math.round(rawCourseHandicap * allowance / 100) + adjustment;
 }
 
 // =====================================================
