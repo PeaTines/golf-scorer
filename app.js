@@ -356,9 +356,16 @@ function renderAdminLocks() {
     const locked = isRoundLocked(i);
     const row = document.createElement('div');
     row.className = 'lock-row';
+    const info = document.createElement('div');
+    info.className = 'lock-row-info';
     const label = document.createElement('div');
     label.className = 'lock-row-label';
     label.textContent = `Day ${i + 1} – ${r.name || `Round ${i + 1}`}`;
+    const status = document.createElement('div');
+    status.className = 'lock-row-status' + (locked ? ' is-locked' : '');
+    status.textContent = locked ? '🔒 Locked' : 'Open';
+    info.appendChild(label);
+    info.appendChild(status);
     const btn = document.createElement('button');
     btn.className = 'btn btn-sm ' + (locked ? 'btn-outline' : 'btn-primary');
     btn.textContent = locked ? '🔓 Unlock' : '🔒 Lock';
@@ -370,12 +377,8 @@ function renderAdminLocks() {
         set(lockRef, true);
       }
     };
-    row.appendChild(label);
+    row.appendChild(info);
     row.appendChild(btn);
-    const status = document.createElement('span');
-    status.className = 'lock-row-status';
-    status.textContent = locked ? '🔒 Locked' : 'Open';
-    row.insertBefore(status, btn);
     box.appendChild(row);
   });
 }
@@ -714,7 +717,7 @@ function syncAdjustmentBoxes(removedPos, initialByRow) {
       const cell = document.createElement('label');
       cell.className = 'adj-cell';
       cell.innerHTML = `<span class="adj-label">Day ${d + 1}</span>` +
-        `<input type="number" class="input-sm adj-input" step="1" min="-9" max="9" value="${vals[d] ?? ''}">`;
+        `<input type="number" class="input-sm adj-input" step="1" min="-9" max="9" placeholder="0" value="${vals[d] ?? ''}">`;
       box.appendChild(cell);
     }
     box.classList.toggle('hidden', numRounds === 0);
@@ -1586,8 +1589,8 @@ function renderGridTable(ri) {
     // Total cell order matches the per-hole cells: Gross score on top,
     // Stableford points below, skins count (if any) below that.
     bodyHtml += `<td class="grid-total">
-      <span class="grid-total-gross"></span>
-      <span class="grid-total-sub"></span>
+      <span class="grid-total-gross">0</span>
+      <span class="grid-total-sub">0 Points</span>
       <span class="grid-total-skins"></span>
     </td></tr>`;
   });
@@ -1671,7 +1674,6 @@ function refreshGridComputedUI(round) {
     const row = document.querySelector(`#grid-table tr[data-player-row="${p.id}"]`);
     if (!row) return;
     let totalGross = 0, totalPts = 0;
-    const holesScored = Object.keys(scoresMap[p.id] || {}).length;
     Object.values(scoresMap[p.id] || {}).forEach(hs => {
       totalGross += hs.gross;
       totalPts   += hs.points || 0;
@@ -1681,9 +1683,8 @@ function refreshGridComputedUI(round) {
     const grossEl = totalCell.querySelector('.grid-total-gross');
     const subEl   = totalCell.querySelector('.grid-total-sub');
     const skinsEl = totalCell.querySelector('.grid-total-skins');
-    // Leave the totals blank until the player has at least one score on this round
-    if (grossEl) grossEl.textContent = holesScored ? totalGross : '';
-    if (subEl)   subEl.textContent   = holesScored ? `${totalPts} Points` : '';
+    if (grossEl) grossEl.textContent = totalGross || 0;
+    if (subEl)   subEl.textContent   = `${totalPts} Points`;
     if (skinsEl) skinsEl.textContent = skinCounts[p.id] > 0 ? `🏅 ${skinCounts[p.id]}` : '';
   });
 }
