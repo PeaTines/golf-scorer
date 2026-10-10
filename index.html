@@ -14,18 +14,18 @@
 <div id="screen-home" class="screen active">
   <div class="hero">
     <div class="hero-emoji">⛳</div>
-    <h1>Golf Scorer</h1>
+    <h1>Golf Scorer <span id="app-version" class="app-version"></span></h1>
     <p class="subtitle">Competition Manager</p>
   </div>
   <div class="card">
-    <button class="btn btn-primary btn-lg" onclick="createNewCompetition()">🏌️ Create New Competition</button>
-    <div class="divider"></div>
     <h3>Competitions</h3>
     <div id="lobby-group-note" class="lobby-group-note hidden"></div>
     <div id="lobby-loading" class="loading-msg">Loading competitions...</div>
     <div id="lobby-list" class="comp-list">
       <!-- Dynamically added -->
     </div>
+    <div class="divider"></div>
+    <button class="btn btn-primary btn-lg" onclick="createNewCompetition()">🏌️ Create New Competition</button>
   </div>
 </div>
 
@@ -253,6 +253,6 @@
   </div>
 </div>
 
-<script type="module" src="app.js?v=11"></script>
+<script type="module" src="app.js?v=12"></script>
 </body>
 </html>
