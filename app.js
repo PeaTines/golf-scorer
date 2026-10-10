@@ -17,6 +17,11 @@ const GOLF_API_BASE = 'https://api.golfcourseapi.com/v1';
 // --- Default hole pars (18 holes) ---
 const DEFAULT_PARS = [4,4,3,4,5,3,4,4,4,4,3,5,4,3,4,5,3,4];
 
+// --- App version ---
+// Taken from the ?v=N on the script tag in index.html (the cache-busting number), so the
+// number shown in the lobby is always the version of the code that is actually running.
+const APP_VERSION = new URL(import.meta.url).searchParams.get('v') || '';
+
 // --- App State ---
 const state = {
   activeCompId: localStorage.getItem('activeCompId') || null,
@@ -130,6 +135,8 @@ window.addEventListener('popstate', e => {
 // LOBBY / HOME SCREEN
 // =====================================================
 function initHome() {
+  const versionEl = $('app-version');
+  if (versionEl) versionEl.textContent = APP_VERSION ? 'v' + APP_VERSION : '';
   $('lobby-loading').classList.remove('hidden');
   const list = $('lobby-list');
   list.innerHTML = '';
@@ -166,7 +173,14 @@ function renderLobby() {
   let comps = Object.entries(state.allComps).map(([id, data]) => ({
     id,
     ...data.meta
-  })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }));
+
+  // Most recently used first. "Used" = the later of: when this phone last opened it, or when
+  // its setup was last saved (by anyone). Both are already available, so no database change
+  // and no extra reads are needed.
+  const lastOpened = getLastOpened();
+  const lastUsed = c => Math.max(lastOpened[c.id] || 0, c.updatedAt || 0, c.createdAt || 0);
+  comps.sort((a, b) => lastUsed(b) - lastUsed(a));
 
   if (urlGroup) {
     comps = comps.filter(c => (c.group || '').trim().toLowerCase() === urlGroup);
@@ -210,9 +224,19 @@ function createNewCompetition() {
 }
 window.createNewCompetition = createNewCompetition;
 
+function getLastOpened() {
+  try { return JSON.parse(localStorage.getItem('compLastOpened') || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
 function openCompetition(compId) {
   state.activeCompId = compId;
   localStorage.setItem('activeCompId', compId);
+  try {
+    const lastOpened = getLastOpened();
+    lastOpened[compId] = Date.now();
+    localStorage.setItem('compLastOpened', JSON.stringify(lastOpened));
+  } catch (e) { /* ordering just falls back to the saved dates */ }
   state.isAdmin = false;
   showScreen('screen-comp-menu');
 }
