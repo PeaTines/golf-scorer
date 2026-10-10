@@ -90,6 +90,43 @@ window.openLeaderboard = openLeaderboard;
 window.leaderboardBack = leaderboardBack;
 
 // =====================================================
+// PHONE BACK GESTURE / BACK BUTTON
+// =====================================================
+// A phone's back gesture normally leaves the web app. Instead we keep one extra
+// history entry ("trap") in front of the page: when the user goes back they land on
+// our base entry, we re-arm the trap and do the in-app "back" (close an open pop-up,
+// otherwise press the current screen's own ← Back button). On the home screen there
+// is nothing to go back to, so the gesture is passed on and leaves the app as usual.
+// The trap is only armed after the first tap (browsers ignore history entries that a
+// page adds before the user has interacted with it).
+function armBackTrap() {
+  try {
+    if (!history.state || !history.state.trap) history.pushState({ trap: true }, '');
+  } catch (e) { /* history unavailable: back simply behaves as before */ }
+}
+
+function handleInAppBack() {
+  const openModal = document.querySelector('.modal:not(.hidden)');
+  if (openModal) {
+    const backdrop = openModal.querySelector('.modal-backdrop');
+    if (backdrop) backdrop.click(); else openModal.classList.add('hidden');
+    return true;
+  }
+  const screen = document.querySelector('.screen:not(.hidden)');
+  const backBtn = screen && screen.id !== 'screen-home' ? screen.querySelector('.btn-back') : null;
+  if (backBtn) { backBtn.click(); return true; }
+  return false;
+}
+
+try { history.replaceState({ base: true }, ''); } catch (e) {}
+document.addEventListener('pointerdown', armBackTrap, { once: true });
+window.addEventListener('popstate', e => {
+  if (!e.state || !e.state.base) return;
+  if (handleInAppBack()) armBackTrap();
+  else history.back(); // nothing left inside the app: let the gesture leave it
+});
+
+// =====================================================
 // LOBBY / HOME SCREEN
 // =====================================================
 function initHome() {
@@ -629,6 +666,9 @@ function coursePropertiesChanged(oldRound, newRound) {
 }
 
 async function recalculateRoundScores(compId, roundIndex, round, roundScores, players, handicapAllowance) {
+  // Build every changed hole as one multi-path update so the whole round is
+  // recalculated in a single quick write (instead of one slow write per hole).
+  const updates = {};
   for (const [playerId, playerScores] of Object.entries(roundScores)) {
     const player = players[playerId];
     if (!player) continue;
@@ -642,18 +682,34 @@ async function recalculateRoundScores(compId, roundIndex, round, roundScores, pl
       if (!hole) continue;
 
       const points = calcStableford(hs.gross, hole.par, hole.si, effectiveHcp);
-      await set(
-        ref(db, `competitions/${compId}/scores/${roundIndex}/${playerId}/${holeIdx}`),
-        { gross: hs.gross, points }
-      );
+      updates[`competitions/${compId}/scores/${roundIndex}/${playerId}/${holeIdx}`] = { gross: hs.gross, points };
     }
   }
+  if (Object.keys(updates).length > 0) await update(ref(db), updates);
 }
 
 // =====================================================
 // SAVE SETUP
 // =====================================================
+let saveSetupBusy = false;
 async function saveSetup() {
+  // Ignore repeat taps while a save (and any score recalculation) is still running —
+  // otherwise a second tap runs the whole save again and re-asks the recalculation question.
+  if (saveSetupBusy) return;
+  saveSetupBusy = true;
+  const btn = $('setup-save-btn');
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await doSaveSetup();
+  } finally {
+    saveSetupBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+window.saveSetup = saveSetup;
+
+async function doSaveSetup() {
   const name  = $('setup-comp-name').value.trim();
   const group = ($('setup-group').value || '').trim().toLowerCase();
   const pin   = $('setup-admin-pin').value.trim();
@@ -762,6 +818,7 @@ async function saveSetup() {
     compMeta.createdAt = state.comp.createdAt;
   }
 
+  const oldComp = state.comp; // snapshot of the saved setup, taken before anything is written
   let compId = state.activeCompId;
   if (isNew) {
     compId = 'comp_' + Date.now();
@@ -770,40 +827,39 @@ async function saveSetup() {
   try {
     await set(ref(db, `competitions/${compId}/meta`), compMeta);
 
-    // If editing (not new/copy), check if course properties changed and prompt recalculation
-    if (!isNew && state.comp && state.comp.rounds) {
-      const oldRounds = state.comp.rounds;
-      // Check each round position that exists in both old and new
+    // If editing (not new/copy), work out which rounds with existing scores are affected by the
+    // changes, then ask ONCE whether to recalculate them all.
+    if (!isNew && oldComp && oldComp.rounds) {
+      const oldRounds = oldComp.rounds;
       const checkCount = Math.min(oldRounds.length, rounds.length);
+      const affected = [];
 
       for (let ri = 0; ri < checkCount; ri++) {
-        // Find the blockId that maps to original round ri (if it still exists in DOM)
-        // We stored blockOriginalRound[blockId] = originalIndex when creating blocks
-        // Find the DOM block at position ri
+        // Only compare if the course block at this position is the same original round
         const blockAtPos = roundBlocks[ri];
         const bid = blockAtPos ? blockAtPos.dataset.blockId : null;
         const originalIdx = bid !== null ? blockOriginalRound[bid] : undefined;
-
-        // Only compare if this block corresponds to the same original round position
         if (originalIdx !== ri) continue;
 
         const oldRound = oldRounds[ri];
         const newRound = rounds[ri];
+        if (!(coursePropertiesChanged(oldRound, newRound) || adjustmentsChanged(oldRound, newRound) || handicapAllowanceChanged)) continue;
 
-        if (coursePropertiesChanged(oldRound, newRound) || adjustmentsChanged(oldRound, newRound) || handicapAllowanceChanged) {
-          // Check if scores exist for this round
-          const scoresSnap = await get(ref(db, `competitions/${compId}/scores/${ri}`));
-          const roundScores = scoresSnap.val();
+        const scoresSnap = await get(ref(db, `competitions/${compId}/scores/${ri}`));
+        const roundScores = scoresSnap.val();
+        if (roundScores && Object.keys(roundScores).length > 0) {
+          affected.push({ ri, newRound, roundScores });
+        }
+      }
 
-          if (roundScores && Object.keys(roundScores).length > 0) {
-            const courseName = newRound.name || `Round ${ri + 1}`;
-            const shouldRecalc = confirm(
-              `Course properties, handicap allowance or handicap adjustments have changed for "${courseName}".\n\nRecalculate all Stableford scores with the new settings?\n\nOK = Yes   Cancel = No`
-            );
-
-            if (shouldRecalc) {
-              await recalculateRoundScores(compId, ri, newRound, roundScores, players, handicapAllowance);
-            }
+      if (affected.length > 0) {
+        const names = affected.map(r => `"${r.newRound.name || `Round ${r.ri + 1}`}"`).join(', ');
+        const shouldRecalc = confirm(
+          `Course properties, handicap allowance or handicap adjustments have changed for ${names}.\n\nRecalculate Stableford scores for ${affected.length === 1 ? 'this round' : 'these rounds'} with the new settings?\n\nOK = Yes   Cancel = No`
+        );
+        if (shouldRecalc) {
+          for (const r of affected) {
+            await recalculateRoundScores(compId, r.ri, r.newRound, r.roundScores, players, handicapAllowance);
           }
         }
       }
@@ -818,7 +874,7 @@ async function saveSetup() {
     showSetupError('Save failed: ' + err.message);
   }
 }
-window.saveSetup = saveSetup;
+
 
 function showSetupError(msg) {
   const el = $('setup-error');
