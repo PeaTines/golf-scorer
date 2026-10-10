@@ -172,11 +172,23 @@ body {
 /* ---- PLAYER SETUP ROWS ---- */
 .player-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
 .player-row input[type=text] { flex: 2; }
+.player-adj {
+  flex: 0 0 100%;
+  display: flex;
+  gap: 8px;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.player-adj.hidden { display: none; }
+.adj-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.adj-label { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+.player-row .player-adj input.adj-input { flex: none; width: 64px; }
 .player-row input[type=number] { flex: 0 0 70px; }
 .player-row .btn-remove {
   background: none;
