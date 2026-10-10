@@ -29,6 +29,7 @@ const state = {
   currentPlayer: null,
   scorerGroup: [],
   lbRound: 'overall',
+  locks: {},
   scoreRound: 0,
   gridRound: 0,
   gridReturnScreen: 'screen-comp-menu',
@@ -78,6 +79,7 @@ function showScreen(id) {
   if (id === 'screen-admin-panel')  {
     const el = $('admin-panel-comp-name');
     if (el) el.textContent = state.comp ? state.comp.name : '';
+    renderAdminLocks();
   }
 }
 window.showScreen = showScreen;
@@ -86,6 +88,9 @@ window.showScreen = showScreen;
 // (so a scorer can peek at it mid-round and come straight back).
 function openLeaderboard(returnScreen) {
   state.lbReturnScreen = returnScreen || 'screen-comp-menu';
+  // Default to the first unlocked day once any day has been locked; otherwise Overall
+  const u = firstUnlockedRound();
+  state.lbRound = (anyRoundLocked() && u >= 0) ? u : 'overall';
   showScreen('screen-leaderboard');
 }
 function leaderboardBack() {
@@ -272,10 +277,115 @@ function incrementName(name) {
 }
 
 // =====================================================
+// DAY LOCKS
+// =====================================================
+// The admin can lock a day (round). Locked days stay visible but can't be edited on the
+// score entry screen or grid. Stored at competitions/<id>/locks/<roundIndex> = true (kept
+// outside "meta" so saving the competition setup never wipes them) and listened to live so
+// a lock/unlock reaches every phone straight away.
+let locksUnsub = null;
+let locksCompId = null;
+
+function isRoundLocked(ri) {
+  return !!(state.locks && state.locks[ri]);
+}
+
+function anyRoundLocked() {
+  return !!state.comp && (state.comp.rounds || []).some((_, i) => isRoundLocked(i));
+}
+
+// First day that isn't locked, or -1 if every day is locked
+function firstUnlockedRound() {
+  const rounds = (state.comp && state.comp.rounds) || [];
+  for (let i = 0; i < rounds.length; i++) if (!isRoundLocked(i)) return i;
+  return -1;
+}
+
+// Day to open on in score entry / grid: first unlocked (the last day if all are locked)
+function defaultEntryRound() {
+  const u = firstUnlockedRound();
+  if (u >= 0) return u;
+  const n = ((state.comp && state.comp.rounds) || []).length;
+  return Math.max(0, n - 1);
+}
+
+function subscribeLocks(compId) {
+  if (locksCompId === compId) return;
+  if (locksUnsub) { try { locksUnsub(); } catch (e) {} }
+  locksCompId = compId;
+  state.locks = {};
+  locksUnsub = onValue(ref(db, `competitions/${compId}/locks`), snap => {
+    state.locks = snap.val() || {};
+    onLocksChanged();
+  });
+}
+
+// Refresh whichever screen is showing when a lock is added or removed
+function onLocksChanged() {
+  const visible = document.querySelector('.screen:not(.hidden)');
+  const id = visible ? visible.id : '';
+  if (id === 'screen-admin-panel') renderAdminLocks();
+  if (id === 'screen-leaderboard') renderLeaderboard();
+  if (id === 'screen-score') {
+    if (state.holeModalCtx && isRoundLocked(state.scoreRound)) {
+      closeHoleModal();
+      alert('This day has just been locked, so that score was not saved.');
+    } else {
+      renderScoreScreen();
+    }
+  }
+  if (id === 'screen-grid' && state.comp) {
+    renderGridRoundTabs();
+    loadGridRound(state.gridRound);
+  }
+}
+
+// Shown when someone tries to change a locked day (e.g. it was locked while they had it open)
+function blockIfLocked() {
+  if (!isRoundLocked(state.scoreRound)) return false;
+  closeHoleModal();
+  alert('This day is locked, so scores can no longer be changed.');
+  return true;
+}
+
+function renderAdminLocks() {
+  const box = $('admin-locks');
+  if (!box || !state.comp) return;
+  box.innerHTML = '';
+  (state.comp.rounds || []).forEach((r, i) => {
+    const locked = isRoundLocked(i);
+    const row = document.createElement('div');
+    row.className = 'lock-row';
+    const label = document.createElement('div');
+    label.className = 'lock-row-label';
+    label.textContent = `Day ${i + 1} – ${r.name || `Round ${i + 1}`}`;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm ' + (locked ? 'btn-outline' : 'btn-primary');
+    btn.textContent = locked ? '🔓 Unlock' : '🔒 Lock';
+    btn.onclick = () => {
+      const lockRef = ref(db, `competitions/${state.activeCompId}/locks/${i}`);
+      if (locked) {
+        if (confirm(`Unlock Day ${i + 1}? Its scores will become editable again.`)) remove(lockRef);
+      } else {
+        set(lockRef, true);
+      }
+    };
+    row.appendChild(label);
+    row.appendChild(btn);
+    const status = document.createElement('span');
+    status.className = 'lock-row-status';
+    status.textContent = locked ? '🔒 Locked' : 'Open';
+    row.insertBefore(status, btn);
+    box.appendChild(row);
+  });
+}
+
+// =====================================================
 // COMPETITION MENU
 // =====================================================
 function initCompMenu() {
   if (!state.activeCompId) { showScreen('screen-home'); return; }
+  subscribeLocks(state.activeCompId);
 
   const path = `competitions/${state.activeCompId}/meta`;
 
@@ -312,7 +422,7 @@ function renderCompMenu() {
 
 function selectPlayer(player) {
   state.currentPlayer = player;
-  state.scoreRound = 0;
+  state.scoreRound = defaultEntryRound(); // first unlocked day
 
   // Load saved group and ensure it only contains valid current players
   const validIds = new Set(Object.keys(state.comp.players || {}));
@@ -392,6 +502,7 @@ function showResetScoresConfirm() {
     'Reset Scores 🔄',
     () => {
       remove(ref(db, `competitions/${state.activeCompId}/scores`));
+      remove(ref(db, `competitions/${state.activeCompId}/locks`)); // a reset competition starts unlocked
       showScreen('screen-comp-menu');
     }
   );
@@ -408,7 +519,8 @@ function showDeleteConfirm() {
       // Delete meta and scores separately to work within existing DB rules
       Promise.all([
         remove(ref(db, `competitions/${compId}/meta`)),
-        remove(ref(db, `competitions/${compId}/scores`))
+        remove(ref(db, `competitions/${compId}/scores`)),
+        remove(ref(db, `competitions/${compId}/locks`))
       ]);
       state.comp = null;
       state.activeCompId = null;
@@ -1019,10 +1131,13 @@ function renderScoreScreen() {
   comp.rounds.forEach((r, i) => {
     const btn = document.createElement('button');
     btn.className = 'tab-btn' + (i === state.scoreRound ? ' active' : '');
-    btn.textContent = r.name || `Round ${i + 1}`;
+    btn.textContent = (isRoundLocked(i) ? '🔒 ' : '') + (r.name || `Round ${i + 1}`);
     btn.onclick = () => { state.scoreRound = i; renderScoreScreen(); };
     tabsEl.appendChild(btn);
   });
+
+  const lockBanner = $('score-lock-banner');
+  if (lockBanner) lockBanner.classList.toggle('hidden', !isRoundLocked(state.scoreRound));
 
   // Show course handicap info for current round
   const currentRound = comp.rounds[state.scoreRound];
@@ -1099,7 +1214,9 @@ function renderHoles(myScores, skins) {
 
     const card = document.createElement('div');
     card.className = 'hole-card' + (scored ? ' scored' : '') + (skinWon ? ' skin-won' : '');
-    card.onclick = () => openHoleModal(h, hole, scored ? hs.gross : hole.par, player);
+    const locked = isRoundLocked(state.scoreRound);
+    if (locked) card.classList.add('locked');
+    else card.onclick = () => openHoleModal(h, hole, scored ? hs.gross : hole.par, player);
 
     const pts = scored ? (hs.points || 0) : null;
     const ptsClass = pts !== null ? `pts-${Math.min(pts, 5)}` : '';
@@ -1110,7 +1227,7 @@ function renderHoles(myScores, skins) {
       <div class="hole-num">${h + 1}</div>
       <div class="hole-info">
         <div class="hole-par-si">Par ${hole.par} · SI ${hole.si}${hole.yards ? ' · ' + hole.yards + ' yds' : ''}</div>
-        <div class="hole-gross">${scored ? `Gross: ${hs.gross}` : '<span style="color:var(--text-muted)">Tap to enter score</span>'}${skinBadge}${rollBadge}</div>
+        <div class="hole-gross">${scored ? `Gross: ${hs.gross}` : `<span style="color:var(--text-muted)">${locked ? 'No score' : 'Tap to enter score'}</span>`}${skinBadge}${rollBadge}</div>
       </div>
       <div class="hole-points ${ptsClass}">${pts !== null ? pts + 'pts' : '—'}</div>
     `;
@@ -1125,6 +1242,7 @@ let modalScore = 4;
 let modalScoreModified = false;
 
 function openHoleModal(holeIdx, holeData, currentGross, player) {
+  if (isRoundLocked(state.scoreRound)) return;
   // Pre-populate existing scores for all group players from cached round data
   const groupScores = {};
   const roundScores = state.lastRoundScores || {};
@@ -1185,6 +1303,7 @@ function renderModalGroupBar() {
 
 function switchModalPlayer(player) {
   const ctx = state.holeModalCtx;
+  if (blockIfLocked()) return;
   const prevPlayer = ctx.player;
 
   const doSwitch = () => {
@@ -1251,6 +1370,7 @@ window.closeHoleModal = closeHoleModal;
 function saveHoleScore() {
   const ctx = state.holeModalCtx;
   if (!ctx) return;
+  if (blockIfLocked()) return;
   const { holeIdx, holeData, player } = ctx;
   const gross        = modalScore;
   const round        = state.comp.rounds[state.scoreRound];
@@ -1270,6 +1390,7 @@ window.saveHoleScore = saveHoleScore;
 function saveAndNextHole() {
   const ctx = state.holeModalCtx;
   if (!ctx) return;
+  if (blockIfLocked()) return;
   const { holeIdx, holeData, player } = ctx;
   const gross        = modalScore;
   const round        = state.comp.rounds[state.scoreRound];
@@ -1387,6 +1508,7 @@ function calcSkins(round, allRoundScores, players, rolloverEnabled = true) {
 // whichever screen the user came from.
 function openGridScreen(returnScreen) {
   state.gridReturnScreen = returnScreen || 'screen-comp-menu';
+  state.gridRound = defaultEntryRound(); // first unlocked day
   showScreen('screen-grid');
 }
 window.openGridScreen = openGridScreen;
@@ -1406,7 +1528,7 @@ function renderGridRoundTabs() {
   state.comp.rounds.forEach((r, i) => {
     const btn = document.createElement('button');
     btn.className = 'tab-btn' + (i === state.gridRound ? ' active' : '');
-    btn.textContent = r.name || `Round ${i + 1}`;
+    btn.textContent = (isRoundLocked(i) ? '🔒 ' : '') + (r.name || `Round ${i + 1}`);
     btn.onclick = () => switchGridRound(i);
     tabsEl.appendChild(btn);
   });
@@ -1457,7 +1579,7 @@ function renderGridTable(ri) {
       const hs    = pScores[h] || {};
       const gross = hs.gross > 0 ? hs.gross : '';
       bodyHtml += `<td>
-        <input type="number" class="grid-input" min="1" max="15" inputmode="numeric" data-player="${p.id}" data-hole="${h}" value="${gross}">
+        <input type="number" class="grid-input" min="1" max="15" inputmode="numeric" data-player="${p.id}" data-hole="${h}" value="${gross}"${isRoundLocked(ri) ? ' disabled' : ''}>
         <span class="grid-pts"></span>
       </td>`;
     }
@@ -1472,6 +1594,11 @@ function renderGridTable(ri) {
   bodyHtml += '</tbody>';
 
   table.innerHTML = headerHtml + bodyHtml;
+  const gridLocked = isRoundLocked(ri);
+  const gridBanner = $('grid-lock-banner');
+  if (gridBanner) gridBanner.classList.toggle('hidden', !gridLocked);
+  const gridSaveBtn = document.querySelector('.grid-save-btn');
+  if (gridSaveBtn) gridSaveBtn.disabled = gridLocked;
 
   // Live-update Stableford points, totals, and skins as the user types,
   // without needing to save first. Assigning via .oninput (not
@@ -1564,6 +1691,8 @@ function refreshGridComputedUI(round) {
 // Reads every input in the grid table, recalculates Stableford points, and
 // writes them all to Firebase in a single multi-path update() call.
 function saveGridScores(showFeedback) {
+  // A locked day is never written to (this also covers the auto-save when leaving the grid)
+  if (isRoundLocked(state.gridRound)) return Promise.resolve();
   const round  = state.comp.rounds[state.gridRound];
   const inputs = document.querySelectorAll('#grid-table .grid-input');
   const updates = {};
@@ -1621,7 +1750,7 @@ function renderLeaderboard() {
   tabsEl.innerHTML = '';
   const tabs = [
     { id: 'overall', label: '🏆 Overall' },
-    ...comp.rounds.map((r, i) => ({ id: i, label: r.name || `Rd ${i + 1}` })),
+    ...comp.rounds.map((r, i) => ({ id: i, label: (isRoundLocked(i) ? '🔒 ' : '') + (r.name || `Rd ${i + 1}`) })),
   ];
   tabs.forEach(t => {
     const btn = document.createElement('button');
