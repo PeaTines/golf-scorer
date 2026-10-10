@@ -1440,8 +1440,8 @@ function renderGridTable(ri) {
     // Total cell order matches the per-hole cells: Gross score on top,
     // Stableford points below, skins count (if any) below that.
     bodyHtml += `<td class="grid-total">
-      <span class="grid-total-gross">0</span>
-      <span class="grid-total-sub">0 Points</span>
+      <span class="grid-total-gross"></span>
+      <span class="grid-total-sub"></span>
       <span class="grid-total-skins"></span>
     </td></tr>`;
   });
@@ -1520,6 +1520,7 @@ function refreshGridComputedUI(round) {
     const row = document.querySelector(`#grid-table tr[data-player-row="${p.id}"]`);
     if (!row) return;
     let totalGross = 0, totalPts = 0;
+    const holesScored = Object.keys(scoresMap[p.id] || {}).length;
     Object.values(scoresMap[p.id] || {}).forEach(hs => {
       totalGross += hs.gross;
       totalPts   += hs.points || 0;
@@ -1529,8 +1530,9 @@ function refreshGridComputedUI(round) {
     const grossEl = totalCell.querySelector('.grid-total-gross');
     const subEl   = totalCell.querySelector('.grid-total-sub');
     const skinsEl = totalCell.querySelector('.grid-total-skins');
-    if (grossEl) grossEl.textContent = totalGross || 0;
-    if (subEl)   subEl.textContent   = `${totalPts} Points`;
+    // Leave the totals blank until the player has at least one score on this round
+    if (grossEl) grossEl.textContent = holesScored ? totalGross : '';
+    if (subEl)   subEl.textContent   = holesScored ? `${totalPts} Points` : '';
     if (skinsEl) skinsEl.textContent = skinCounts[p.id] > 0 ? `🏅 ${skinCounts[p.id]}` : '';
   });
 }
@@ -1671,8 +1673,10 @@ function renderLbTable(display) {
     } else {
       const round      = state.comp.rounds[state.lbRound];
       const playingHcp = getEffectiveHandicap(t, round);
-      hcpDisplay = (playingHcp !== t.handicap)
-        ? `HCP ${t.handicap} · Playing ${playingHcp}`
+      const adj = Number(round && round.hcpAdjust && round.hcpAdjust[t.id]) || 0;
+      const adjNote = adj ? ` (${adj > 0 ? '+' : '-'}${Math.abs(adj)} adj)` : '';
+      hcpDisplay = (playingHcp !== t.handicap || adj)
+        ? `HCP ${t.handicap} · Playing ${playingHcp}${adjNote}`
         : `HCP ${t.handicap}`;
     }
 
