@@ -4,11 +4,16 @@
 
 // --- Firebase Setup (ES Module imports) ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, remove, update } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+import { getDatabase, ref, set as fbSet, get, onValue, remove, update as fbUpdate, goOffline, goOnline } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
 const db = getDatabase(firebaseApp);
+
+// Writes go through these wrappers so the app knows how many are still waiting for the
+// server to confirm them (see CONNECTION HEALTH below).
+const set    = (r, v) => trackWrite(fbSet(r, v));
+const update = (r, u) => trackWrite(fbUpdate(r, u));
 
 // --- Golf Course API ---
 const GOLF_API_KEY  = 'DEIJXBJWWU3ER7XYAEYSE72MCQ';
@@ -54,6 +59,265 @@ let courseBlockCounter = 0;
 const $ = id => document.getElementById(id);
 
 // =====================================================
+// CONNECTION HEALTH
+// =====================================================
+// Phones (iPhones especially) can end up with a Firebase connection that has quietly died
+// while the page still looks fine, so reads never come back and the screen shows old data.
+// This section:
+//  - keeps the leaderboard / score screen live (updates arrive without tapping anything)
+//  - every ~25s (and when the phone wakes) checks the real server data over plain HTTPS and,
+//    if the live connection is behind, shows the correct data and reconnects
+//  - shows a banner if the server can't be reached, or if saves haven't been confirmed yet
+//  - provides a manual refresh that resets the connection first
+const net = {
+  sdkConnected: true,   // Firebase library's own view of the connection
+  sdkDownSince: 0,
+  restFails: 0,         // consecutive failed plain-HTTPS checks
+  down: false,          // true => show the "can't reach the server" banner
+  pending: 0,           // saves sent but not yet confirmed by the server
+  pendingSince: 0,
+  lastDataAt: 0,        // when the screen last received scores
+  lastSdkNorm: null,    // normalised copy of the latest live data (for comparing with the server)
+  hiddenAt: 0
+};
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function fmtTime(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function currentScreenId() {
+  const el = document.querySelector('.screen:not(.hidden)');
+  return el ? el.id : '';
+}
+
+function trackWrite(promise) {
+  if (net.pending === 0) net.pendingSince = Date.now();
+  net.pending++;
+  setTimeout(renderSyncBanner, 3100); // only warn if a save is still unconfirmed after ~3s
+  const done = () => { net.pending = Math.max(0, net.pending - 1); renderSyncBanner(); };
+  promise.then(done, done);
+  return promise;
+}
+
+// Plain HTTPS read straight from the database (does not use the live connection)
+async function restGet(path, ms = 5000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const base = String(FIREBASE_CONFIG.databaseURL).replace(/\/$/, '');
+    const res = await fetch(`${base}/${path}.json`, { signal: ctrl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Make live (library) data and plain-HTTPS data comparable: arrays vs objects, nulls, key order
+function normalizeForCompare(v) {
+  const walk = x => {
+    if (x === null || x === undefined) return undefined;
+    if (typeof x !== 'object') return x;
+    const out = {};
+    Object.keys(x).sort().forEach(k => {
+      const w = walk(x[k]);
+      if (w !== undefined) out[k] = w;
+    });
+    return Object.keys(out).length ? out : undefined;
+  };
+  return JSON.stringify(walk(v) ?? null);
+}
+
+// ---- Live scores for the score screen / leaderboard ----
+const live = { unsub: null, cb: null, path: null, last: undefined, hasData: false };
+
+function stopLive() {
+  if (live.unsub) { try { live.unsub(); } catch (e) {} }
+  live.unsub = null; live.cb = null; live.path = null; live.hasData = false; live.last = undefined;
+  net.lastSdkNorm = null;
+}
+
+function liveScores(cb) {
+  const path = getScorePath();
+  live.cb = cb;
+  if (live.unsub && live.path === path) {
+    // Already listening: just hand over the latest data
+    if (live.hasData) cb({ val: () => live.last });
+    return;
+  }
+  stopLive();
+  live.cb = cb;
+  live.path = path;
+  live.unsub = onValue(ref(db, path), snap => {
+    live.last = snap.val();
+    live.hasData = true;
+    net.lastDataAt = Date.now();
+    net.lastSdkNorm = normalizeForCompare(live.last);
+    if (live.cb) live.cb(snap);
+    renderSyncBanner();
+  });
+  // If the first answer is slow, get it over plain HTTPS instead
+  setTimeout(async () => {
+    if (live.hasData || live.path !== path) return;
+    try {
+      const data = await restGet(path);
+      noteRestOk();
+      if (!live.hasData && live.path === path && live.cb) {
+        net.lastDataAt = Date.now();
+        live.cb({ val: () => data });
+        renderSyncBanner();
+      }
+    } catch (e) { noteRestFailure(); }
+  }, 5000);
+}
+
+// ---- Connection state ----
+function setDown(v) {
+  if (net.down === v) return;
+  net.down = v;
+  renderSyncBanner();
+}
+
+function noteRestOk() {
+  net.restFails = 0;
+  if (net.down && net.sdkConnected) setDown(false);
+}
+
+function noteRestFailure() {
+  net.restFails++;
+  if (net.restFails >= 2) setDown(true);
+}
+
+async function resetConnection() {
+  try { goOffline(db); await sleep(250); goOnline(db); } catch (e) { /* ignore */ }
+}
+
+// The library's own connected flag (only treated as a problem if it stays false for 5s)
+onValue(ref(db, '.info/connected'), snap => {
+  net.sdkConnected = snap.val() === true;
+  if (!net.sdkConnected) {
+    net.sdkDownSince = Date.now();
+    setTimeout(() => { if (!net.sdkConnected && Date.now() - net.sdkDownSince >= 5000) setDown(true); }, 5200);
+  } else {
+    net.sdkDownSince = 0;
+    if (net.restFails === 0) setDown(false);
+  }
+});
+
+// ---- Health check: compare the live data with what the server really holds ----
+let healthBusy = false;
+async function healthTick() {
+  if (healthBusy || document.visibilityState !== 'visible' || !state.activeCompId) return;
+  const id = currentScreenId();
+  if (!['screen-score', 'screen-leaderboard', 'screen-grid', 'screen-comp-menu'].includes(id)) return;
+  healthBusy = true;
+  try {
+    if (live.cb && (id === 'screen-score' || id === 'screen-leaderboard')) {
+      const path = getScorePath();
+      let data = await restGet(path);
+      noteRestOk();
+      if (live.path === path && normalizeForCompare(data) !== net.lastSdkNorm) {
+        await sleep(3000); // the live update may simply be a moment behind
+        data = await restGet(path);
+        if (live.path === path && live.cb && normalizeForCompare(data) !== net.lastSdkNorm) {
+          // The live connection is behind: show the real data and reconnect
+          live.last = data; live.hasData = true;
+          net.lastDataAt = Date.now();
+          net.lastSdkNorm = normalizeForCompare(data);
+          live.cb({ val: () => data });
+          renderSyncBanner();
+          resetConnection();
+          showSyncToast('Refreshed ' + fmtTime(Date.now()));
+        }
+      }
+    } else {
+      await restGet(`competitions/${state.activeCompId}/locks`);
+      noteRestOk();
+    }
+  } catch (e) {
+    noteRestFailure();
+    if (net.restFails === 1) setTimeout(healthTick, 3000); // quick second check before warning
+  } finally {
+    healthBusy = false;
+  }
+}
+
+// ---- Manual refresh (⟳ button / Retry) ----
+async function manualRefresh() {
+  document.querySelectorAll('.refresh-btn').forEach(b => b.classList.add('spinning'));
+  showSyncToast('Refreshing…', 8000);
+  await resetConnection();
+  const id = currentScreenId();
+  if (id === 'screen-leaderboard') renderLeaderboard();
+  else if (id === 'screen-score') renderScoreScreen();
+  try {
+    const path = getScorePath();
+    const data = await restGet(path);
+    noteRestOk();
+    if (live.cb) {
+      live.last = data; live.hasData = true;
+      net.lastDataAt = Date.now();
+      net.lastSdkNorm = normalizeForCompare(data);
+      live.cb({ val: () => data });
+    }
+    showSyncToast('Updated ' + fmtTime(Date.now()));
+  } catch (e) {
+    noteRestFailure();
+    showSyncToast("Still can't reach the server");
+  }
+  document.querySelectorAll('.refresh-btn').forEach(b => b.classList.remove('spinning'));
+  renderSyncBanner();
+}
+window.manualRefresh = manualRefresh;
+
+// ---- UI: banner + toast ----
+function renderSyncBanner() {
+  const pendingLong = net.pending > 0 && Date.now() - net.pendingSince > 3000;
+  document.querySelectorAll('[data-sync-banner]').forEach(el => {
+    if (!net.down && !pendingLong) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    const lines = [];
+    if (net.down) {
+      lines.push(net.lastDataAt
+        ? `⚠️ Can't reach the server. Showing scores from ${fmtTime(net.lastDataAt)}.`
+        : "⚠️ Can't reach the server.");
+    }
+    if (pendingLong) {
+      lines.push(`⏳ ${net.pending} save${net.pending === 1 ? '' : 's'} not sent yet. Keep this page open.`);
+    }
+    el.className = 'sync-banner ' + (net.down ? 'warn' : 'pending');
+    el.innerHTML = `<span>${lines.join('<br>')}</span>` +
+      (net.down ? '<button class="btn-mini" onclick="manualRefresh()">Retry</button>' : '');
+  });
+}
+
+let syncToastTimer = null;
+function showSyncToast(msg, ms = 2200) {
+  const el = $('sync-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(syncToastTimer);
+  syncToastTimer = setTimeout(() => el.classList.add('hidden'), ms);
+}
+
+// ---- Wake-up / network events ----
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    net.hiddenAt = Date.now();
+  } else {
+    const away = net.hiddenAt ? Date.now() - net.hiddenAt : 0;
+    if (away > 20000) resetConnection(); // the connection often dies while the phone sleeps
+    healthTick();
+  }
+});
+window.addEventListener('pageshow', e => { if (e.persisted) { resetConnection(); healthTick(); } });
+window.addEventListener('online', () => { resetConnection(); healthTick(); });
+setInterval(healthTick, 25000);
+window.__healthTick = healthTick; // exposed for testing
+
+// =====================================================
 // SCREEN ROUTING
 // =====================================================
 function showScreen(id) {
@@ -66,6 +330,12 @@ function showScreen(id) {
   el.classList.remove('hidden');
   el.classList.add('active');
   window.scrollTo(0, 0);
+
+  // Live scores only run on the score screen and leaderboard
+  if (id !== 'screen-score' && id !== 'screen-leaderboard') stopLive();
+  // Coming back to the score screen (e.g. from the leaderboard): redraw with current data
+  if (id === 'screen-score' && state.currentPlayer && state.comp) renderScoreScreen();
+  renderSyncBanner();
 
   // Widen the app container for the spreadsheet-style grid screen
   // (designed for laptops/tablets, not the mobile-first 480px layout)
@@ -1163,7 +1433,7 @@ function renderScoreScreen() {
   }
 
   // Load scores (live)
-  onValue(ref(db, getScorePath()), snap => {
+  liveScores(snap => {
     const allScores = snap.val() || {};
     state.lastRoundScores = allScores[state.scoreRound] || {};
     const myScores  = (state.lastRoundScores)[player.id] || {};
@@ -1172,7 +1442,7 @@ function renderScoreScreen() {
 
     renderHoles(myScores, skins);
     updateScoreSummary(player, comp, allScores, skins);
-  }, { onlyOnce: true });
+  });
 }
 
 function updateScoreSummary(player, comp, allScores) {
@@ -1761,7 +2031,7 @@ function renderLeaderboard() {
     tabsEl.appendChild(btn);
   });
 
-  onValue(ref(db, getScorePath()), snap => {
+  liveScores(snap => {
     const allScores = snap.val() || {};
     const players   = comp.players ? Object.values(comp.players) : [];
 
@@ -1808,7 +2078,7 @@ function renderLeaderboard() {
 
     renderLbTable(display);
     renderSkinsSummary(comp, roundSkins, allScores);
-  }, { onlyOnce: true });
+  });
 }
 
 function renderLbTable(display) {
