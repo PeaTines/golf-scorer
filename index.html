@@ -128,11 +128,13 @@
     <button class="btn-back" onclick="showScreen('screen-comp-menu')">← Back</button>
     <h2 id="score-player-name"></h2>
     <button class="btn-back header-action" onclick="openLeaderboard('screen-score')">📊 Leaderboard</button>
+    <button class="refresh-btn" onclick="manualRefresh()" aria-label="Refresh scores">⟳</button>
   </div>
   <div class="round-tabs" id="score-round-tabs"></div>
   <div id="scorer-group-bar" class="scorer-group-bar hidden"></div>
   <div id="score-hcp-info" class="hcp-info-bar hidden"></div>
   <div id="score-lock-banner" class="lock-banner hidden">🔒 Locked. View only</div>
+  <div class="sync-banner hidden" data-sync-banner></div>
   <div id="score-content">
     <div class="card score-summary-card">
       <div class="score-summary">
@@ -159,8 +161,10 @@
   <div class="screen-header">
     <button class="btn-back" onclick="leaderboardBack()">← Back</button>
     <h2>📊 Leaderboard</h2>
+    <button class="refresh-btn header-action" onclick="manualRefresh()" aria-label="Refresh scores">⟳</button>
   </div>
   <div class="round-tabs" id="lb-round-tabs"></div>
+  <div class="sync-banner hidden" data-sync-banner></div>
   <div id="leaderboard-content">
     <div class="card" id="lb-table-card">
       <div id="lb-table"></div>
@@ -254,11 +258,14 @@
   </div>
   <div class="round-tabs" id="grid-round-tabs"></div>
   <div id="grid-lock-banner" class="lock-banner hidden">🔒 Locked. View only</div>
+  <div class="sync-banner hidden" data-sync-banner></div>
   <div class="grid-wrapper">
     <table class="grid-table" id="grid-table"></table>
   </div>
 </div>
 
-<script type="module" src="app.js?v=14"></script>
+<div id="sync-toast" class="sync-toast hidden"></div>
+
+<script type="module" src="app.js?v=15"></script>
 </body>
 </html>

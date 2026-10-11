@@ -920,3 +920,80 @@ thead .grid-player-col {
 .lock-row-status { font-size: 0.9rem; color: var(--text-muted); margin-top: 2px; }
 .lock-row-status.is-locked { color: #8a4b00; font-weight: 600; }
 .lock-row .btn-sm { margin-right: 0; flex: 0 0 auto; min-width: 120px; }
+
+
+/* ---- Connection status ---- */
+.refresh-btn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: white;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.refresh-btn:active { background: rgba(255,255,255,0.3); }
+.refresh-btn.header-action { margin-left: auto; }
+.refresh-btn.spinning { animation: sync-spin 0.9s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+.btn-back.header-action + .refresh-btn { margin-left: 0; }
+
+.sync-banner {
+  margin: 0 0 4px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sync-banner.hidden { display: none; }
+.sync-banner.warn { background: #fff3e0; border-left: 4px solid #ef6c00; color: #8a4b00; }
+.sync-banner.pending { background: #e3f2fd; border-left: 4px solid #1565c0; color: #0d47a1; }
+.sync-banner .btn-mini {
+  background: #ef6c00;
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 8px 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sync-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: rgba(30,30,30,0.9);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  z-index: 300;
+  max-width: 90%;
+  text-align: center;
+}
+.sync-toast.hidden { display: none; }
+
+/* Keep the score screen header on one line on narrow phones: the name shrinks (with …) */
+#screen-score .screen-header { gap: 8px; }
+#score-player-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#screen-score .screen-header .btn-back { padding: 6px 10px; font-size: 0.85rem; }
+#screen-score .refresh-btn { width: 36px; height: 36px; font-size: 1.25rem; }
