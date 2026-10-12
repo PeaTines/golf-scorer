@@ -1823,6 +1823,15 @@ function loadGridRound(ri) {
   get(ref(db, getScorePath())).then(snap => {
     const allScores = snap.val() || {};
     state.gridScores = allScores[ri] || {};
+    // Baseline = what was on the server when we loaded; used to detect real edits
+    state.gridBaseline = {};
+    Object.entries(state.gridScores).forEach(([pid, holes]) => {
+      state.gridBaseline[pid] = {};
+      Object.entries(holes || {}).forEach(([h, hs]) => {
+        if (hs && hs.gross > 0) state.gridBaseline[pid][h] = hs.gross;
+      });
+    });
+    state.gridBaselineRound = ri;
     renderGridTable(ri);
   });
 }
@@ -1879,11 +1888,13 @@ function renderGridTable(ri) {
   table.oninput = (e) => {
     if (!e.target.classList.contains('grid-input')) return;
     refreshGridComputedUI(round);
+    updateGridChangeUI();
   };
 
   // Populate points/totals/skins immediately using whatever values were
   // just loaded from Firebase (or left blank for a fresh round).
   refreshGridComputedUI(round);
+  updateGridChangeUI();
 }
 
 // Calculates the Stableford points for a single hole entry, or null if no
@@ -1959,44 +1970,83 @@ function refreshGridComputedUI(round) {
   });
 }
 
-// Reads every input in the grid table, recalculates Stableford points, and
-// writes them all to Firebase in a single multi-path update() call.
+// Cells whose on-screen value differs from what was loaded (the baseline).
+// Only these are ever written, so untouched cells can't overwrite scores
+// that other phones entered in the meantime.
+function getGridChanges() {
+  const changes = [];
+  if (state.gridBaselineRound !== state.gridRound || !state.gridBaseline) return changes;
+  document.querySelectorAll('#grid-table .grid-input').forEach(inp => {
+    const pid  = inp.dataset.player;
+    const h    = parseInt(inp.dataset.hole);
+    const cur  = parseInt(inp.value) || 0;
+    const base = (state.gridBaseline[pid] && state.gridBaseline[pid][h]) || 0;
+    if (cur !== base) changes.push({ pid, h, cur, base });
+  });
+  return changes;
+}
+
+// Highlights changed cells and shows the count on the Save button.
+function updateGridChangeUI() {
+  const changed = new Set(getGridChanges().map(c => `${c.pid}_${c.h}`));
+  document.querySelectorAll('#grid-table .grid-input').forEach(inp => {
+    inp.classList.toggle('grid-changed', changed.has(`${inp.dataset.player}_${inp.dataset.hole}`));
+  });
+  const btn = document.querySelector('.grid-save-btn');
+  if (btn && !btn.dataset.busy) {
+    btn.textContent = changed.size ? `💾 Save (${changed.size})` : '💾 Save';
+  }
+}
+
+// Writes ONLY the cells the user changed since the grid loaded, in a single
+// multi-path update(). A cleared cell is deleted only if it had a score at
+// load time. Nothing changed = no write at all.
 function saveGridScores(showFeedback) {
   // A locked day is never written to (this also covers the auto-save when leaving the grid)
   if (isRoundLocked(state.gridRound)) return Promise.resolve();
-  const round  = state.comp.rounds[state.gridRound];
-  const inputs = document.querySelectorAll('#grid-table .grid-input');
-  const updates = {};
+  const ri      = state.gridRound;
+  const round   = state.comp.rounds[ri];
+  const changes = getGridChanges();
+  const btn     = document.querySelector('.grid-save-btn');
 
-  inputs.forEach(inp => {
-    const pid    = inp.dataset.player;
-    const h      = parseInt(inp.dataset.hole);
-    const gross  = parseInt(inp.value) || 0;
+  if (!changes.length) {
+    if (showFeedback && btn) {
+      btn.dataset.busy = '1';
+      btn.textContent = '✅ Nothing to save';
+      setTimeout(() => { delete btn.dataset.busy; updateGridChangeUI(); }, 1200);
+    }
+    return Promise.resolve();
+  }
+
+  const updates = {};
+  changes.forEach(({ pid, h, cur }) => {
     const player = state.comp.players[pid];
     if (!player) return;
-
-    const path = `competitions/${state.activeCompId}/scores/${state.gridRound}/${pid}/${h}`;
-    if (gross > 0) {
-      const effectiveHcp = getEffectiveHandicap(player, round);
-      const hole   = round.holes[h];
-      const points = calcStableford(gross, hole.par, hole.si, effectiveHcp);
-      updates[path] = { gross, points };
+    const path = `competitions/${state.activeCompId}/scores/${ri}/${pid}/${h}`;
+    if (cur > 0) {
+      const hole = round.holes[h];
+      const points = calcStableford(cur, hole.par, hole.si, getEffectiveHandicap(player, round));
+      updates[path] = { gross: cur, points };
     } else {
-      updates[path] = null; // clear empty cells
+      updates[path] = null; // user cleared a cell that had a score
     }
   });
 
   return update(ref(db), updates).then(() => {
-    if (showFeedback) {
-      const btn = document.querySelector('.grid-save-btn');
-      if (btn) {
-        const orig = btn.textContent;
-        btn.textContent = '✅ Saved!';
-        setTimeout(() => { btn.textContent = orig; }, 1200);
-      }
+    // The saved values are the new baseline (no reload, so anything the user
+    // is typing right now isn't disturbed)
+    if (state.gridBaselineRound === ri && state.gridBaseline) {
+      changes.forEach(({ pid, h, cur }) => {
+        if (!state.gridBaseline[pid]) state.gridBaseline[pid] = {};
+        if (cur > 0) state.gridBaseline[pid][h] = cur; else delete state.gridBaseline[pid][h];
+      });
     }
-    // Refresh totals from the values we just saved
-    loadGridRound(state.gridRound);
+    if (showFeedback && btn) {
+      btn.dataset.busy = '1';
+      btn.textContent = '✅ Saved!';
+      setTimeout(() => { delete btn.dataset.busy; updateGridChangeUI(); }, 1200);
+    }
+    if (state.gridRound === ri) updateGridChangeUI();
   });
 }
 window.saveGridScores = saveGridScores;
