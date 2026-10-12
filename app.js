@@ -1777,7 +1777,7 @@ function calcSkins(round, allRoundScores, players, rolloverEnabled = true) {
 // SPREADSHEET-STYLE SCORE GRID (Laptop / Tablet entry)
 // =====================================================
 // Entry point: called from the Competition Menu or Admin Panel via
-// openGridScreen(returnScreen). Exit: exitGrid() saves and returns to
+// openGridScreen(returnScreen). Exit: exitGrid() confirms before discarding unsaved edits, then returns to
 // whichever screen the user came from.
 function openGridScreen(returnScreen) {
   state.gridReturnScreen = returnScreen || 'screen-comp-menu';
@@ -1809,12 +1809,11 @@ function renderGridRoundTabs() {
 
 function switchGridRound(newIdx) {
   if (newIdx === state.gridRound) return;
-  // Save the round we're leaving before switching courses
-  saveGridScores(false).then(() => {
-    state.gridRound = newIdx;
-    renderGridRoundTabs();
-    loadGridRound(newIdx);
-  });
+  // Unsaved changes on the round we're leaving are only dropped after confirmation
+  if (!confirmDiscardGridChanges()) return;
+  state.gridRound = newIdx;
+  renderGridRoundTabs();
+  loadGridRound(newIdx);
 }
 window.switchGridRound = switchGridRound;
 
@@ -2051,12 +2050,20 @@ function saveGridScores(showFeedback) {
 }
 window.saveGridScores = saveGridScores;
 
-// Saves whatever is on screen, then returns to the screen the grid was
-// opened from (Competition Menu or Admin Panel).
+// Returns true if it is OK to leave the current grid view: either nothing is
+// pending, or the user agreed to throw the pending changes away.
+function confirmDiscardGridChanges() {
+  if (isRoundLocked(state.gridRound)) return true;
+  const n = getGridChanges().length;
+  if (!n) return true;
+  return confirm(`You have ${n} unsaved change${n === 1 ? '' : 's'}. They will be lost if you leave.\n\nOK = leave and lose changes\nCancel = stay and keep editing`);
+}
+
+// Returns to the screen the grid was opened from (Competition Menu or
+// Admin Panel). Unsaved changes are only discarded after confirmation.
 function exitGrid() {
-  saveGridScores(false).then(() => {
-    showScreen(state.gridReturnScreen || 'screen-comp-menu');
-  });
+  if (!confirmDiscardGridChanges()) return;
+  showScreen(state.gridReturnScreen || 'screen-comp-menu');
 }
 window.exitGrid = exitGrid;
 
