@@ -997,3 +997,6 @@ thead .grid-player-col {
 }
 #screen-score .screen-header .btn-back { padding: 6px 10px; font-size: 0.85rem; }
 #screen-score .refresh-btn { width: 36px; height: 36px; font-size: 1.25rem; }
+
+/* Grid cells edited since load (these are the only cells that get saved) */
+.grid-input.grid-changed { background: #fff3cd; border-color: #e0a800; }
