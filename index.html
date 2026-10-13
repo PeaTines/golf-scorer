@@ -190,6 +190,11 @@
     <button class="btn btn-outline btn-lg" onclick="openLeaderboard('screen-comp-menu')">📊 View Leaderboard</button>
     <button class="btn btn-outline btn-lg" onclick="openGridScreen('screen-admin-panel')">🖥️ Grid Score Entry (Tablet/Laptop)</button>
     <div class="divider"></div>
+    <h3>🔗 Leaderboard link</h3>
+    <p class="info-text">A link that opens this competition straight on the Overall leaderboard. Share it with the group or add it to a phone's home screen.</p>
+    <button class="btn btn-outline btn-lg" onclick="copyLeaderboardLink()">📋 Copy leaderboard link</button>
+    <input type="text" id="admin-lb-link" class="hidden" readonly style="width:100%;margin-top:8px;font-size:16px" onfocus="this.select()">
+    <div class="divider"></div>
     <h3>🔒 Lock days</h3>
     <p class="info-text">A locked day can't be changed on the score entry screen or grid. Its scores stay visible, and score entry and the leaderboard open on the first unlocked day.</p>
     <div id="admin-locks"></div>
@@ -266,6 +271,6 @@
 
 <div id="sync-toast" class="sync-toast hidden"></div>
 
-<script type="module" src="app.js?v=17"></script>
+<script type="module" src="app.js?v=18"></script>
 </body>
 </html>

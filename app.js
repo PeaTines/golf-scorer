@@ -2350,6 +2350,45 @@ function escHtml(str) {
 // =====================================================
 // INIT
 // =====================================================
+// Deep link: ?comp=<id>&view=leaderboard opens that competition's OVERALL leaderboard
+function openDeepLink() {
+  let compId = null, view = null;
+  try {
+    const q = new URLSearchParams(location.search);
+    compId = q.get('comp'); view = q.get('view');
+  } catch (e) {}
+  if (!compId || view !== 'leaderboard') return false;
+  get(ref(db, `competitions/${compId}/meta`)).then(snap => {
+    const meta = snap.val();
+    if (!meta) { alert('Competition not found.'); showScreen('screen-home'); return; }
+    state.activeCompId = compId;
+    try { localStorage.setItem('activeCompId', compId); } catch (e) {}
+    state.isAdmin = false;
+    state.comp = meta;
+    subscribeLocks(compId);
+    state.lbReturnScreen = 'screen-comp-menu';
+    state.lbRound = 'overall'; // always the overall board, never "current day"
+    showScreen('screen-leaderboard');
+  }).catch(() => showScreen('screen-home'));
+  return true;
+}
+
+// Admin panel: build and copy the overall-leaderboard link for this competition
+function leaderboardLink() {
+  const base = location.origin + location.pathname;
+  return `${base}?comp=${encodeURIComponent(state.activeCompId)}&view=leaderboard`;
+}
+function copyLeaderboardLink() {
+  const url = leaderboardLink();
+  const box = $('admin-lb-link');
+  if (box) { box.value = url; box.classList.remove('hidden'); }
+  const done = ok => showSyncToast(ok ? 'Leaderboard link copied' : 'Press and hold the link to copy it', 3000);
+  try {
+    navigator.clipboard.writeText(url).then(() => done(true), () => { if (box) { box.focus(); box.select(); } done(false); });
+  } catch (e) { if (box) { box.focus(); box.select(); } done(false); }
+}
+window.copyLeaderboardLink = copyLeaderboardLink;
+
 window.addEventListener('DOMContentLoaded', () => {
-  showScreen('screen-home');
+  if (!openDeepLink()) showScreen('screen-home');
 });
